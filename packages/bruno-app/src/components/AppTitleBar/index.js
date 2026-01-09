@@ -30,7 +30,7 @@ const getOsClass = () => {
 
 // Helper to get display name for workspace
 const getWorkspaceDisplayName = (name) => {
-  if (!name || name === 'default') return 'Default Workspace';
+  if (!name) return 'Default Workspace';
   return name;
 };
 
