@@ -50,6 +50,10 @@ import MenuDropdown from 'ui/MenuDropdown';
 import { useSidebarAccordion } from 'components/Sidebar/SidebarAccordionContext';
 import { createEmptyStateMenuItems } from 'utils/collections/emptyStateRequest';
 
+// Delay before showing empty collection state (ms)
+// This prevents flicker from race condition between loading state and item batch updates
+const EMPTY_STATE_DELAY_MS = 300;
+
 const Collection = ({ collection, searchText }) => {
   const { dropdownContainerRef } = useSidebarAccordion();
   const [showNewFolderModal, setShowNewFolderModal] = useState(false);
@@ -61,9 +65,11 @@ const Collection = ({ collection, searchText }) => {
   const [showRemoveCollectionModal, setShowRemoveCollectionModal] = useState(false);
   const [dropType, setDropType] = useState(null);
   const [isKeyboardFocused, setIsKeyboardFocused] = useState(false);
+  const [showEmptyState, setShowEmptyState] = useState(false);
   const dispatch = useDispatch();
   const isLoading = areItemsLoading(collection);
   const collectionRef = useRef(null);
+  const itemCount = collection.items?.length || 0;
 
   const isCollectionFocused = useSelector(isTabForItemActive({ itemUid: collection.uid }));
   const { hasCopiedItems } = useSelector((state) => state.app.clipboard);
@@ -258,6 +264,21 @@ const Collection = ({ collection, searchText }) => {
     }
   }, [isCollectionFocused]);
 
+  // Debounce showing empty state to prevent flicker
+  // Race condition: isLoading can become false before items batch arrives from IPC
+  useEffect(() => {
+    const isMounted = collection.mountStatus === 'mounted';
+    const hasItems = itemCount > 0;
+
+    if (hasItems || isLoading || !isMounted) {
+      setShowEmptyState(false);
+      return;
+    }
+
+    const timer = setTimeout(() => setShowEmptyState(true), EMPTY_STATE_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [itemCount, isLoading, collection.mountStatus]);
+
   if (searchText && searchText.length) {
     if (!doesCollectionHaveItemsMatchingSearchText(collection, searchText)) {
       return null;
@@ -278,9 +299,7 @@ const Collection = ({ collection, searchText }) => {
 
   const requestItems = sortItemsBySequence(filter(collection.items, (i) => isItemARequest(i) && !i.isTransient));
   const folderItems = sortByNameThenSequence(filter(collection.items, (i) => isItemAFolder(i) && !i.isTransient));
-  const isCollectionReady = collection.mountStatus === 'mounted' && collection.isLoading === false;
-  const isCollectionEmpty = !folderItems?.length && !requestItems?.length;
-  const showEmptyCollectionMessage = isCollectionReady && isCollectionEmpty && !hasSearchText;
+  const showEmptyCollectionMessage = showEmptyState && !hasSearchText;
 
   const emptyStateMenuItems = createEmptyStateMenuItems({ dispatch, collection, itemUid: null });
 
