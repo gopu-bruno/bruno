@@ -35,14 +35,15 @@ const QUICKJS_SCRIPT_SUFFIX = `
     `;
 
 // Computed offsets — number of newlines before user script in each wrapper
-const NODEVM_WRAPPER_OFFSET = NODEVM_SCRIPT_PREFIX.split('\n').length - 1;
-const QUICKJS_WRAPPER_OFFSET = QUICKJS_SCRIPT_PREFIX.split('\n').length - 1;
+const NODEVM_SCRIPT_WRAPPER_OFFSET = NODEVM_SCRIPT_PREFIX.split('\n').length - 1;
+const QUICKJS_SCRIPT_WRAPPER_OFFSET = QUICKJS_SCRIPT_PREFIX.split('\n').length - 1;
+
+const wrapInNodeVmClosure = (script) => NODEVM_SCRIPT_PREFIX + script + NODEVM_SCRIPT_SUFFIX;
+const wrapInQuickJSClosure = (script) => QUICKJS_SCRIPT_PREFIX + script + QUICKJS_SCRIPT_SUFFIX;
 
 module.exports = {
-  NODEVM_SCRIPT_PREFIX,
-  NODEVM_SCRIPT_SUFFIX,
-  QUICKJS_SCRIPT_PREFIX,
-  QUICKJS_SCRIPT_SUFFIX,
-  NODEVM_WRAPPER_OFFSET,
-  QUICKJS_WRAPPER_OFFSET
+  wrapInNodeVmClosure,
+  wrapInQuickJSClosure,
+  NODEVM_SCRIPT_WRAPPER_OFFSET,
+  QUICKJS_SCRIPT_WRAPPER_OFFSET
 };

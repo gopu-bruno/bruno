@@ -12,7 +12,7 @@ const getBundledCode = require('../bundle-browser-rollup');
 const addPathShimToContext = require('./shims/lib/path');
 const { marshallToVm } = require('./utils');
 const addCryptoUtilsShimToContext = require('./shims/lib/crypto-utils');
-const { QUICKJS_SCRIPT_PREFIX, QUICKJS_SCRIPT_SUFFIX } = require('../wrapper-constants');
+const { wrapInQuickJSClosure } = require('../wrapper-constants');
 
 let QuickJSSyncContext;
 const loader = memoizePromiseFactory(() => newQuickJSWASMModule());
@@ -158,7 +158,7 @@ const executeQuickJsVmAsync = async ({ script: externalScript, context: external
 
     test && __brunoTestResults && addTestShimToContext(vm, __brunoTestResults);
 
-    const script = QUICKJS_SCRIPT_PREFIX + externalScript + QUICKJS_SCRIPT_SUFFIX;
+    const script = wrapInQuickJSClosure(externalScript);
 
     const result = vm.evalCode(script, scriptPath);
     const promiseHandle = vm.unwrapResult(result);

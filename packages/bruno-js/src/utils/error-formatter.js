@@ -1,6 +1,6 @@
 const fs = require('fs');
 const YAML = require('yaml');
-const { NODEVM_WRAPPER_OFFSET, QUICKJS_WRAPPER_OFFSET } = require('../sandbox/wrapper-constants');
+const { NODEVM_SCRIPT_WRAPPER_OFFSET, QUICKJS_SCRIPT_WRAPPER_OFFSET } = require('../sandbox/wrapper-constants');
 
 const DEFAULT_CONTEXT_LINES = 5;
 const ALLOWED_SOURCE_EXTENSIONS = ['.bru', '.yml', '.yaml'];
@@ -117,7 +117,7 @@ const adjustLineNumber = (filePath, reportedLine, isQuickJS, scriptType = null, 
     return reportedLine;
   }
 
-  const wrapperOffset = isQuickJS ? QUICKJS_WRAPPER_OFFSET : NODEVM_WRAPPER_OFFSET;
+  const wrapperOffset = isQuickJS ? QUICKJS_SCRIPT_WRAPPER_OFFSET : NODEVM_SCRIPT_WRAPPER_OFFSET;
   const scriptRelativeLine = reportedLine - wrapperOffset;
 
   if (scriptRelativeLine < 1) return reportedLine;
@@ -165,7 +165,7 @@ const adjustLineNumber = (filePath, reportedLine, isQuickJS, scriptType = null, 
 const resolveSegmentError = (parsed, metadata, scriptType, cache) => {
   if (!metadata?.segments?.length || !parsed) return null;
 
-  const wrapperOffset = parsed.isQuickJS ? QUICKJS_WRAPPER_OFFSET : NODEVM_WRAPPER_OFFSET;
+  const wrapperOffset = parsed.isQuickJS ? QUICKJS_SCRIPT_WRAPPER_OFFSET : NODEVM_SCRIPT_WRAPPER_OFFSET;
   const scriptRelativeLine = parsed.line - wrapperOffset;
   if (scriptRelativeLine < 1) return null;
 
