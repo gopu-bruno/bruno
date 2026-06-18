@@ -1,0 +1,138 @@
+// Shared UI primitives — badges, pills, buttons, collection card.
+// Pure React + inline styles + CSS variables. Portable to bruno-app as-is.
+import React, { useState } from 'react';
+
+// --- Number formatter ---
+export const fmtN = (n) => (n >= 1000 ? (n / 1000).toFixed(n >= 10000 ? 0 : 1) + 'k' : String(n));
+
+// --- Badges ---
+export function VerifiedBadge({ size = 14, title = 'Verified publisher' }) {
+  return (
+    <span title={title} style={{ display: 'inline-flex', color: 'var(--hue-blue)', alignItems: 'center' }}>
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor">
+        <path d="M12 1l2.39 2.16 3.22 -.27 .57 3.18 2.93 1.36 -1.3 2.96 1.3 2.96 -2.93 1.36 -.57 3.18 -3.22 -.27 -2.39 2.16 -2.39 -2.16 -3.22 .27 -.57 -3.18 -2.93 -1.36 1.3 -2.96 -1.3 -2.96 2.93 -1.36 .57 -3.18 3.22 .27z M9 12l2 2 4-4" stroke="#fff" strokeWidth="1.1" fill="currentColor"/>
+      </svg>
+    </span>
+  );
+}
+
+export function OfficialPill() {
+  return <span style={{
+    fontSize: 10, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase',
+    color: 'var(--hue-blue)', background: 'hsla(214, 55%, 45%, 0.10)',
+    padding: '2px 6px', borderRadius: 4, whiteSpace: 'nowrap'
+  }}>Official</span>;
+}
+
+export function CommunityPill() {
+  return <span style={{
+    fontSize: 10, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase',
+    color: 'var(--fg-subtext-1)', background: 'var(--bg-surface-0)',
+    padding: '2px 6px', borderRadius: 4
+  }}>Community</span>;
+}
+
+export function Pill({ children, tone = 'neutral' }) {
+  const tones = {
+    neutral: { bg: 'var(--bg-surface-0)', fg: 'var(--fg-subtext-1)' },
+    muted:   { bg: 'rgba(66, 133, 244, 0.12)', fg: '#3b6fc9' },
+    brand:   { bg: 'var(--brand-soft)',   fg: 'var(--brand-text)' },
+    success: { bg: 'var(--success-bg)',   fg: 'var(--success)' },
+    info:    { bg: 'var(--info-bg)',      fg: 'var(--info)' },
+    warn:    { bg: 'var(--warning-bg)',   fg: 'var(--warning)' },
+  };
+  const t = tones[tone] || tones.neutral;
+  return <span style={{
+    fontSize: 11, fontWeight: 500, color: t.fg, background: t.bg,
+    padding: '2px 8px', borderRadius: 10, whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 4
+  }}>{children}</span>;
+}
+
+// --- Buttons ---
+export function Btn({ children, onClick, variant = 'primary', size = 'md', icon, style, disabled, full }) {
+  const sizes = {
+    sm: { pad: '5px 10px', fs: 12 },
+    md: { pad: '7px 14px', fs: 13 },
+    lg: { pad: '9px 18px', fs: 13 },
+  };
+  const variants = {
+    primary: { bg: 'var(--brand)', fg: '#fff', bd: 'var(--brand)' },
+    secondary: { bg: '#fff', fg: 'var(--fg-base)', bd: 'var(--border-1)' },
+    ghost: { bg: 'transparent', fg: 'var(--fg-base)', bd: 'transparent' },
+    soft: { bg: 'var(--brand-soft)', fg: 'var(--brand-text)', bd: 'transparent' },
+    danger: { bg: '#fff', fg: 'var(--danger)', bd: 'var(--border-1)' },
+  };
+  const s = sizes[size], v = variants[variant];
+  const [hover, setHover] = useState(false);
+  return (
+    <button onClick={onClick} disabled={disabled}
+      onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
+      style={{
+        padding: s.pad, fontSize: s.fs, fontWeight: 500,
+        background: disabled ? 'var(--bg-surface-0)' : (hover && variant === 'primary' ? 'var(--brand-strong)' : (hover && variant !== 'primary' ? 'var(--bg-mantle)' : v.bg)),
+        color: disabled ? 'var(--fg-subtext-0)' : v.fg,
+        border: `1px solid ${hover && variant === 'secondary' ? 'var(--border-2)' : v.bd}`,
+        borderRadius: 5, cursor: disabled ? 'not-allowed' : 'pointer',
+        display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap',
+        width: full ? '100%' : undefined, justifyContent: 'center',
+        transition: 'background 0.12s, border-color 0.12s',
+        fontFamily: 'inherit', ...style,
+      }}>
+      {icon}{children}
+    </button>
+  );
+}
+
+// --- Hoverable row helper ---
+export function Row({ children, onClick, style, hoverBg = 'var(--bg-mantle)' }) {
+  const [h, setH] = useState(false);
+  return <div onClick={onClick} onMouseEnter={() => setH(true)} onMouseLeave={() => setH(false)}
+    style={{ background: h ? hoverBg : 'transparent', cursor: onClick ? 'pointer' : 'default', ...style }}>
+    {children}
+  </div>;
+}
+
+// --- Collection card (used across Discover / Search) ---
+export function CollectionCard({ c, onOpen, compact }) {
+  const [h, setH] = useState(false);
+  return (
+    <div onClick={() => onOpen && onOpen(c)}
+      onMouseEnter={() => setH(true)} onMouseLeave={() => setH(false)}
+      style={{
+        border: `1px solid ${h ? 'var(--border-2)' : 'var(--border-1)'}`,
+        borderRadius: 8, background: '#fff', padding: compact ? 14 : 16,
+        cursor: 'pointer', transition: 'border-color 0.12s, transform 0.12s',
+        transform: h ? 'translateY(-1px)' : 'none',
+        display: 'flex', flexDirection: 'column', gap: compact ? 8 : 10,
+      }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+        <div style={{
+          width: 34, height: 34, borderRadius: 6, background: c.color || 'var(--bg-surface-0)',
+          color: c.color ? '#fff' : 'var(--fg-subtext-1)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontWeight: 700, fontSize: 14, flexShrink: 0, fontFamily: 'var(--font-mono)',
+        }}>{c.ns[0].toUpperCase()}</div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 1 }}>
+            <span style={{ fontSize: 13, fontWeight: 600 }}>{c.title}</span>
+            {c.verified && <VerifiedBadge />}
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--fg-subtext-1)', fontFamily: 'var(--font-mono)' }}>
+            {c.ns}/{c.name}
+          </div>
+        </div>
+        {c.official && <OfficialPill />}
+      </div>
+      <div style={{ fontSize: 12.5, color: 'var(--fg-subtext-2)', lineHeight: 1.5, textWrap: 'pretty' }}>
+        {c.tagline}
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop: 'auto' }}>
+        {(c.langs || []).map((l) => (
+          <span key={l} style={{
+            fontSize: 10.5, color: 'var(--fg-subtext-1)', background: 'var(--bg-surface-0)',
+            padding: '2px 7px', borderRadius: 4, fontFamily: 'var(--font-mono)',
+          }}>{l}</span>
+        ))}
+      </div>
+    </div>
+  );
+}

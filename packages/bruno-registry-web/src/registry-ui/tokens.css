@@ -1,0 +1,162 @@
+/* Bruno Design System — Colors & Type
+ * Tokens lifted from packages/bruno-app/src/themes/light/light.js + dark/dark.js
+ * Brand: hsl(33, 80%, 46%) — warm amber/saddle
+ *
+ * NOTE: In bruno-app these tokens already exist on the theme. This file is for
+ * the standalone website host. When mounting registry-ui inside bruno-app, the
+ * app's own theme variables satisfy these same custom properties.
+ */
+
+:root {
+  /* ===== Brand ===== */
+  --brand: hsl(33, 80%, 46%);            /* #cc7b1b — primary solid (light) */
+  --brand-text: hsl(33, 67%, 45%);       /* on-light text version */
+  --brand-strong: hsl(33, 67%, 50%);
+  --brand-subtle: hsl(33, 69%, 56%);
+  --brand-soft: hsla(33, 80%, 46%, 0.08); /* light tint background */
+  --brand-amber: #d97706;                 /* tailwind amber-600, used in marketing CTA tab + nav */
+  --brand-yellow-600: rgb(202, 138, 4);   /* gradient pill on website */
+
+  /* Hues — used for HTTP method tags, semantic intent, syntax */
+  --hue-red: hsl(8, 60%, 52%);
+  --hue-rose: hsl(352, 45%, 50%);
+  --hue-brown: hsl(28, 55%, 38%);
+  --hue-orange: hsl(35, 85%, 42%);
+  --hue-yellow: hsl(45, 75%, 42%);
+  --hue-lime: hsl(85, 45%, 40%);
+  --hue-green: hsl(145, 50%, 36%);
+  --hue-teal: hsl(178, 50%, 36%);
+  --hue-cyan: hsl(195, 55%, 42%);
+  --hue-blue: hsl(214, 55%, 45%);
+  --hue-indigo: hsl(235, 45%, 45%);
+  --hue-violet: hsl(258, 42%, 50%);
+  --hue-purple: hsl(280, 45%, 48%);
+  --hue-pink: hsl(328, 50%, 48%);
+
+  /* HTTP methods */
+  --method-get: var(--hue-green);
+  --method-post: var(--hue-purple);
+  --method-put: var(--hue-orange);
+  --method-delete: var(--hue-red);
+  --method-patch: var(--hue-purple);
+  --method-options: var(--hue-teal);
+  --method-head: var(--hue-cyan);
+  --method-grpc: var(--hue-indigo);
+  --method-ws: var(--hue-orange);
+  --method-gql: var(--hue-pink);
+
+  /* Backgrounds — light */
+  --bg-base: #ffffff;
+  --bg-mantle: #f8f8f8;
+  --bg-crust: #f6f6f6;
+  --bg-surface-0: #f1f1f1;
+  --bg-surface-1: #eaeaea;
+  --bg-surface-2: #e5e5e5;
+
+  /* Text — light */
+  --fg-base: #343434;
+  --fg-subtext-2: #666666;
+  --fg-subtext-1: #838383;
+  --fg-subtext-0: #9b9b9b;
+
+  /* Overlays + borders */
+  --overlay-2: #8b8b8b;
+  --overlay-1: #b0b0b0;
+  --overlay-0: #c0c0c0;
+  --border-2: #cccccc;
+  --border-1: #e5e5e5;
+  --border-0: #efefef;
+
+  /* Marketing site (bruno-website) tokens */
+  --link: #1663bb;
+  --link-blue: #0046b1;
+  --text-primary-marketing: #37352f; /* Notion-ish dark */
+  --text-navbar: rgb(117 117 117);
+  --menu-border-active: #3d8b00;
+
+  /* Semantic / intent */
+  --info:    var(--hue-blue);
+  --success: var(--hue-green);
+  --warning: var(--hue-orange);
+  --danger:  var(--hue-red);
+  --info-bg:    hsla(214, 55%, 45%, 0.15);
+  --success-bg: hsla(145, 50%, 36%, 0.15);
+  --warning-bg: hsla(35, 85%, 42%, 0.15);
+  --danger-bg:  hsla(8, 60%, 52%, 0.15);
+
+  /* ===== Type ===== */
+  --font-sans: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", Menlo, Monaco, Consolas, "Courier New", monospace;
+
+  /* App scale (rem-based, very dense) */
+  --fs-xs:   0.6875rem; /* 11 */
+  --fs-sm:   0.75rem;   /* 12 */
+  --fs-base: 0.8125rem; /* 13 — app default */
+  --fs-md:   0.875rem;  /* 14 */
+  --fs-lg:   1rem;      /* 16 */
+  --fs-xl:   1.125rem;  /* 18 */
+
+  /* Marketing scale */
+  --fs-h1: 3rem;        /* 48; hero scales up to 4rem md+ */
+  --fs-h1-xl: 4rem;
+  --fs-h2: 1.75rem;
+  --fs-h3: 1.5rem;
+  --fs-h4: 1.25rem;
+  --fs-body-lg: 1.125rem;
+  --fs-body: 1rem;
+
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-semibold: 600;
+  --fw-bold: 700;
+
+  --lh-tight: 1.1;
+  --lh-snug: 1.25;
+  --lh-normal: 1.5;
+
+  /* ===== Radius ===== */
+  --radius-sm: 4px;
+  --radius-base: 6px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+  --radius-xl: 12px;
+  --radius-pill: 9999px;
+
+  /* ===== Shadow ===== */
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.14), 0 0 0 1px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 2px 12px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(0, 0, 0, 0.05);
+  --shadow-tip: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+/* ===== Dark (matches packages/bruno-app/src/themes/dark/dark.js) ===== */
+.theme-dark {
+  --brand: hsl(39, 74%, 59%);
+  --brand-text: hsl(39, 74%, 64%);
+  --brand-strong: hsl(39, 74%, 64%);
+  --brand-subtle: hsl(39, 74%, 54%);
+  --brand-soft: hsla(39, 74%, 59%, 0.10);
+
+  --bg-base: hsl(0deg 0% 10%);
+  --bg-mantle: #222224;
+  --bg-crust: #1e1e1e;
+  --bg-surface-0: #26292b;
+  --bg-surface-1: hsl(204, 4%, 23%);
+  --bg-surface-2: #666666;
+
+  --fg-base: hsl(0deg 0% 80%);
+  --fg-subtext-2: #bbbbbb;
+  --fg-subtext-1: #aaaaaa;
+  --fg-subtext-0: #999999;
+
+  --overlay-2: #666666;
+  --overlay-1: #555555;
+  --overlay-0: #444444;
+  --border-2: #444444;
+  --border-1: #333333;
+  --border-0: #2a2a2a;
+
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 2px 12px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(0, 0, 0, 0.4);
+}
