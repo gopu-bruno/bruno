@@ -24,5 +24,7 @@ export {
   DEFAULT_REGISTRY,
   getRegistryData,
   REGISTRY_INDEX_URL,
+  REGISTRY_INDEX_RAW_URL,
+  REGISTRY_INDEX_CONTENTS_API_URL,
   fetchRegistryIndex,
 } from './registryData.js';

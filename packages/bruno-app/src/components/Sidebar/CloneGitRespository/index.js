@@ -24,7 +24,7 @@ import SkippedPathsWarning from 'components/SkippedPathsWarning';
 import toast from 'react-hot-toast';
 import get from 'lodash/get';
 
-const CloneGitRepository = ({ onClose, onFinish, collectionRepositoryUrl = null }) => {
+const CloneGitRepository = ({ onClose, onFinish, collectionRepositoryUrl = null, collectionSubdir = null }) => {
   const [collectionPaths, setCollectionPaths] = useState([]);
   const [skippedCollectionPaths, setSkippedCollectionPaths] = useState([]);
   const [selectedCollectionPaths, setSelectedCollectionPaths] = useState([]);
@@ -142,8 +142,22 @@ const CloneGitRepository = ({ onClose, onFinish, collectionRepositoryUrl = null 
         const scanResult = await dispatch(scanForBrunoFiles(targetPath));
 
         scanFinished();
-        setCollectionPaths(scanResult?.items || []);
+        const scannedItems = scanResult?.items || [];
+        setCollectionPaths(scannedItems);
         setSkippedCollectionPaths(scanResult?.skippedItems || []);
+
+        // When the clone came from a specific registry collection (which lives in
+        // a subdir of a repo that may hold others), keep the full list but
+        // pre-select that collection so confirming imports just it — the user can
+        // still tick others if they want.
+        const norm = (p) => (p || '').replace(/\\/g, '/').replace(/\/+$/, '');
+        if (collectionSubdir && collectionSubdir !== '.') {
+          const wanted = norm(path.join(targetPath, collectionSubdir));
+          const match = scannedItems.filter((it) => norm(it.pathname) === wanted);
+          if (match.length) {
+            setSelectedCollectionPaths(match.map((it) => it.pathname));
+          }
+        }
       } catch (err) {
         cloneError();
         dispatch(removeGitOperationProgress(processUid));

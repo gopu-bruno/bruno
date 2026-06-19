@@ -1,10 +1,10 @@
 import React from 'react';
-import { IconCheck, IconChevronDown, IconFolder, IconHome, IconPin, IconPinned, IconPlus, IconDownload, IconSettings, IconMinus, IconSquare, IconX, IconCopy } from '@tabler/icons';
+import { IconCheck, IconChevronDown, IconFolder, IconHome, IconWorld, IconPin, IconPinned, IconPlus, IconDownload, IconSettings, IconMinus, IconSquare, IconX, IconCopy } from '@tabler/icons';
 import { forwardRef, useCallback, useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { useDispatch, useSelector } from 'react-redux';
 
-import { savePreferences, showManageWorkspacePage, toggleSidebarCollapse } from 'providers/ReduxStore/slices/app';
+import { savePreferences, showManageWorkspacePage, showRegistryPage, toggleSidebarCollapse } from 'providers/ReduxStore/slices/app';
 import { closeConsole, openConsole } from 'providers/ReduxStore/slices/logs';
 import { createWorkspaceWithUniqueName, openWorkspaceDialog, switchWorkspace } from 'providers/ReduxStore/slices/workspaces/actions';
 import { sortWorkspaces, toggleWorkspacePin } from 'utils/workspaces';
@@ -145,6 +145,10 @@ const AppTitleBar = () => {
     }
   };
 
+  const handleDiscoverClick = () => {
+    dispatch(showRegistryPage());
+  };
+
   const handleWorkspaceSwitch = (workspaceUid) => {
     dispatch(switchWorkspace(workspaceUid));
     toast.success(`Switched to ${getWorkspaceDisplayName(workspaces.find((w) => w.uid === workspaceUid)?.name)}`);
@@ -275,6 +279,10 @@ const AppTitleBar = () => {
       <div className="titlebar-content">
         <div className="titlebar-left">
           {showWindowControls && <AppMenu />}
+
+          <ActionIcon onClick={handleDiscoverClick} label="Discover collections" size="lg" className="discover-button">
+            <IconWorld size={16} stroke={1.5} />
+          </ActionIcon>
 
           <ActionIcon onClick={handleHomeClick} label="Home" size="lg" className="home-button">
             <IconHome size={16} stroke={1.5} />

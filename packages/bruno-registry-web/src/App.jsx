@@ -6,8 +6,8 @@
 // bruno-app would have its own equivalent host (open a detail tab, install into
 // the workspace) reusing the same registry-ui components unchanged.
 import React, { useEffect, useState } from 'react';
-import './registry-ui/tokens.css';
-import { Sidebar, FindAndSharePage, CollectionDetailPage, fetchRegistryIndex } from './registry-ui/index.js';
+import '@usebruno/registry-ui/tokens.css';
+import { Sidebar, FindAndSharePage, CollectionDetailPage, fetchRegistryIndex } from '@usebruno/registry-ui';
 
 export default function App() {
   // Live data from the git-backed index; null until it resolves (page falls
@@ -40,7 +40,7 @@ export default function App() {
   };
 
   return (
-    <div style={{ height: '100vh', width: '100%', display: 'flex', overflow: 'hidden', background: 'var(--bg-base)' }}>
+    <div className="oc-registry" style={{ height: '100vh', width: '100%', display: 'flex', overflow: 'hidden', background: 'var(--bg-base)' }}>
       <Sidebar active="browse" onSelect={goBrowse} />
       <div style={{ flex: 1, minWidth: 0, height: '100%' }}>
         {view.name === 'detail' ? (

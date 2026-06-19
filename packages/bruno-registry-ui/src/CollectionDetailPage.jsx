@@ -14,12 +14,28 @@ const CATEGORY_LABELS = {
   comms: 'Communications', data: 'Data & Analytics', storage: 'Storage & CDN', productivity: 'Productivity',
 };
 
-export function CollectionDetailPage({ collection, onBack, onInstall }) {
+export function CollectionDetailPage({
+  collection,
+  onBack,
+  onInstall,
+  // Host-specific install affordances. The desktop app clones the source repo
+  // into the workspace, so it passes a truthful `git clone …` command and a
+  // clone-explicit label; the website keeps its own defaults.
+  installLabel = 'Add to Bruno',
+  installCommand
+}) {
   if (!collection) return null;
   const c = collection;
   const slug = `${c.ns}/${c.name}`;
-  const repo = c.source && c.source.repo;
-  const installCmd = `bruno install ${slug}`;
+  const source = c.source || {};
+  const repo = source.repo;
+  // The collection lives in its own subdir of the source repo — link there, not
+  // at the repo root, so "View source" shows this collection, not all of them.
+  const subdir = source.subdir && source.subdir !== '.' ? source.subdir : '';
+  const ref = source.ref || 'main';
+  const sourceUrl = repo ? (subdir ? `${repo}/tree/${ref}/${subdir}` : repo) : null;
+  const sourceLabel = repo ? `${repo.replace(/^https?:\/\//, '')}${subdir ? '/' + subdir : ''}` : '';
+  const installCmd = installCommand || `bruno install ${slug}`;
 
   return (
     <div style={{ overflow: 'auto', height: '100%', background: 'var(--bg-base)' }}>
@@ -63,9 +79,9 @@ export function CollectionDetailPage({ collection, onBack, onInstall }) {
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, flexShrink: 0 }}>
-            <Btn variant="primary" size="lg" icon={<Icons.Download size={14} />} onClick={onInstall}>Add to Bruno</Btn>
-            {repo && (
-              <a href={repo} target="_blank" rel="noreferrer" style={{ textDecoration: 'none' }}>
+            <Btn variant="primary" size="lg" icon={<Icons.GitBranch size={14} />} onClick={onInstall}>{installLabel}</Btn>
+            {sourceUrl && (
+              <a href={sourceUrl} target="_blank" rel="noreferrer" style={{ textDecoration: 'none' }}>
                 <Btn variant="secondary" size="lg" icon={<Icons.Github size={14} />} full>View source</Btn>
               </a>
             )}
@@ -93,10 +109,10 @@ export function CollectionDetailPage({ collection, onBack, onInstall }) {
             <Detail label="Publisher" value={c.ns} />
             {c.category && <Detail label="Category" value={CATEGORY_LABELS[c.category] || c.category} />}
             {c.langs && c.langs.length > 0 && <Detail label="Languages" value={c.langs.join(', ')} />}
-            {repo && (
+            {sourceUrl && (
               <Detail label="Source" value={
-                <a href={repo} target="_blank" rel="noreferrer" style={{ color: 'var(--link)', textDecoration: 'none', wordBreak: 'break-all' }}>
-                  {repo.replace(/^https?:\/\//, '')}
+                <a href={sourceUrl} target="_blank" rel="noreferrer" style={{ color: 'var(--link)', textDecoration: 'none', wordBreak: 'break-all' }}>
+                  {sourceLabel}
                 </a>
               } />
             )}

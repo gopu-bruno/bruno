@@ -7,6 +7,7 @@ import Sidebar from 'components/Sidebar';
 import StatusBar from 'components/StatusBar';
 import AppTitleBar from 'components/AppTitleBar';
 import ApiSpecPanel from 'components/ApiSpecPanel';
+import Registry from 'components/Registry';
 import TabPanelErrorBoundary from 'components/RequestTabPanel/TabPanelErrorBoundary';
 // import ErrorCapture from 'components/ErrorCapture';
 import { useSelector } from 'react-redux';
@@ -79,6 +80,7 @@ export default function Main() {
   const isDragging = useSelector((state) => state.app.isDragging);
   const showApiSpecPage = useSelector((state) => state.app.showApiSpecPage);
   const showManageWorkspacePage = useSelector((state) => state.app.showManageWorkspacePage);
+  const showRegistryPage = useSelector((state) => state.app.showRegistryPage);
   const isConsoleOpen = useSelector((state) => state.logs.isConsoleOpen);
   const saveTransientRequestModals = useSelector((state) => state.collections.saveTransientRequestModals);
   const mainSectionRef = useRef(null);
@@ -143,6 +145,8 @@ export default function Main() {
               <ApiSpecPanel key={activeApiSpecUid} />
             ) : showManageWorkspacePage ? (
               <ManageWorkspace />
+            ) : showRegistryPage ? (
+              <Registry />
             ) : (
               <>
                 <RequestTabs />

@@ -23,6 +23,7 @@ const initialState = {
   showHomePage: false,
   showApiSpecPage: false,
   showManageWorkspacePage: false,
+  showRegistryPage: false,
   isEnvironmentSettingsModalOpen: false,
   isGlobalEnvironmentSettingsModalOpen: false,
   activePreferencesTab: 'general',
@@ -150,6 +151,7 @@ export const appSlice = createSlice({
       state.showHomePage = true;
       state.showApiSpecPage = false;
       state.showManageWorkspacePage = false;
+      state.showRegistryPage = false;
     },
     hideHomePage: (state) => {
       state.showHomePage = false;
@@ -158,6 +160,7 @@ export const appSlice = createSlice({
       state.showManageWorkspacePage = true;
       state.showHomePage = false;
       state.showApiSpecPage = false;
+      state.showRegistryPage = false;
     },
     hideManageWorkspacePage: (state) => {
       state.showManageWorkspacePage = false;
@@ -165,9 +168,19 @@ export const appSlice = createSlice({
     showApiSpecPage: (state) => {
       state.showHomePage = false;
       state.showApiSpecPage = true;
+      state.showRegistryPage = false;
     },
     hideApiSpecPage: (state) => {
       state.showApiSpecPage = false;
+    },
+    showRegistryPage: (state) => {
+      state.showRegistryPage = true;
+      state.showHomePage = false;
+      state.showApiSpecPage = false;
+      state.showManageWorkspacePage = false;
+    },
+    hideRegistryPage: (state) => {
+      state.showRegistryPage = false;
     },
     updatePreferences: (state, action) => {
       state.preferences = action.payload;
@@ -241,11 +254,13 @@ export const appSlice = createSlice({
         state.showHomePage = false;
         state.showApiSpecPage = false;
         state.showManageWorkspacePage = false;
+        state.showRegistryPage = false;
       })
       .addCase(focusTab, (state) => {
         state.showHomePage = false;
         state.showApiSpecPage = false;
         state.showManageWorkspacePage = false;
+        state.showRegistryPage = false;
       });
   }
 });
@@ -265,6 +280,8 @@ export const {
   hideManageWorkspacePage,
   showApiSpecPage,
   hideApiSpecPage,
+  showRegistryPage,
+  hideRegistryPage,
   updatePreferences,
   updateActivePreferencesTab,
   updateCookies,

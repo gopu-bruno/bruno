@@ -1,0 +1,87 @@
+/* Bruno OpenCollection Registry — design tokens, SCOPED to .oc-registry.
+ *
+ * Tokens lifted from packages/bruno-app/src/themes/light/light.js.
+ * Scoped (not :root) so embedding the registry surface inside bruno-app never
+ * overrides the app's own global theme variables. Both hosts wrap the registry
+ * UI in <div class="oc-registry"> — the website (standalone) and bruno-app
+ * (full-screen takeover) alike. The registry presents as a light surface,
+ * matching the design.
+ */
+
+.oc-registry {
+  /* ===== Brand ===== */
+  --brand: hsl(33, 80%, 46%);            /* #cc7b1b — primary solid (light) */
+  --brand-text: hsl(33, 67%, 45%);       /* on-light text version */
+  --brand-strong: hsl(33, 67%, 50%);
+  --brand-subtle: hsl(33, 69%, 56%);
+  --brand-soft: hsla(33, 80%, 46%, 0.08); /* light tint background */
+
+  /* Hues — semantic intent, method tags */
+  --hue-red: hsl(8, 60%, 52%);
+  --hue-orange: hsl(35, 85%, 42%);
+  --hue-green: hsl(145, 50%, 36%);
+  --hue-teal: hsl(178, 50%, 36%);
+  --hue-cyan: hsl(195, 55%, 42%);
+  --hue-blue: hsl(214, 55%, 45%);
+  --hue-indigo: hsl(235, 45%, 45%);
+  --hue-purple: hsl(280, 45%, 48%);
+  --hue-pink: hsl(328, 50%, 48%);
+
+  /* Backgrounds — light */
+  --bg-base: #ffffff;
+  --bg-mantle: #f8f8f8;
+  --bg-crust: #f6f6f6;
+  --bg-surface-0: #f1f1f1;
+  --bg-surface-1: #eaeaea;
+  --bg-surface-2: #e5e5e5;
+
+  /* Text — light */
+  --fg-base: #343434;
+  --fg-subtext-2: #666666;
+  --fg-subtext-1: #838383;
+  --fg-subtext-0: #9b9b9b;
+
+  /* Overlays + borders */
+  --overlay-2: #8b8b8b;
+  --overlay-1: #b0b0b0;
+  --overlay-0: #c0c0c0;
+  --border-2: #cccccc;
+  --border-1: #e5e5e5;
+  --border-0: #efefef;
+
+  /* Links */
+  --link: #1663bb;
+
+  /* Semantic / intent */
+  --info:    var(--hue-blue);
+  --success: var(--hue-green);
+  --warning: var(--hue-orange);
+  --danger:  var(--hue-red);
+  --info-bg:    hsla(214, 55%, 45%, 0.15);
+  --success-bg: hsla(145, 50%, 36%, 0.15);
+  --warning-bg: hsla(35, 85%, 42%, 0.15);
+  --danger-bg:  hsla(8, 60%, 52%, 0.15);
+
+  /* ===== Type ===== */
+  --font-sans: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", Menlo, Monaco, Consolas, "Courier New", monospace;
+
+  /* ===== Shadow ===== */
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.14), 0 0 0 1px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 2px 12px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(0, 0, 0, 0.05);
+
+  /* Surface defaults so text/font inherit correctly inside the wrapper */
+  font-family: var(--font-sans);
+  color: var(--fg-base);
+  -webkit-font-smoothing: antialiased;
+}
+
+.oc-registry *,
+.oc-registry *::before,
+.oc-registry *::after { box-sizing: border-box; }
+
+.oc-registry h1, .oc-registry h2, .oc-registry h3, .oc-registry h4 { margin: 0; }
+.oc-registry p { margin: 0; }
+.oc-registry a { color: var(--link); text-decoration: none; }
+.oc-registry a:hover { text-decoration: underline; }

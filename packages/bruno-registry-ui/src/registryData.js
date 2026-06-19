@@ -40,15 +40,39 @@ export function getRegistryData(registry) {
 
 // --- Live, git-backed index -------------------------------------------------
 // The real registry is a git repo of one-file-per-collection entries; CI rolls
-// them into a single index.json. The website fetches that file and searches it
-// client-side — no server. Override the URL with VITE_REGISTRY_INDEX_URL.
+// them into a single index.json. Consumers fetch that file and search it
+// client-side — no server.
 //
-// We read via the GitHub contents API (raw media type) rather than
-// raw.githubusercontent.com because the API reflects git immediately, while raw
-// has a ~5-min CDN cache — so a just-merged PR shows up on the next refresh.
-export const REGISTRY_INDEX_URL =
-  (import.meta.env && import.meta.env.VITE_REGISTRY_INDEX_URL) ||
+// Two fetch strategies, one per host:
+//
+//  • Website (this module's fetchRegistryIndex) reads via the GitHub *contents
+//    API* (raw media type). The API reflects git immediately (no CDN cache), so
+//    a just-merged PR shows up on the next refresh — but it's rate-limited
+//    (60 req/hr unauthenticated) and CORS-enabled for the browser.
+//    Override with VITE_REGISTRY_INDEX_URL.
+//
+//  • Desktop app fetches REGISTRY_INDEX_RAW_URL (raw.githubusercontent.com) from
+//    the Electron MAIN process (renderer CSP blocks external connect-src). raw
+//    has NO rate limit — ideal for the demo — at the cost of a ~5-min CDN cache.
+//    See bruno-electron `renderer:fetch-registry-index` + bruno-app's Registry host.
+
+// raw CDN — no rate limit (hammer refresh freely in dev), ~5-min cache.
+export const REGISTRY_INDEX_RAW_URL =
+  'https://raw.githubusercontent.com/gopu-bruno/collection-registry/main/index.json';
+
+// GitHub contents API — reflects a just-merged PR immediately, but rate-limited
+// to 60 req/hr unauthenticated.
+export const REGISTRY_INDEX_CONTENTS_API_URL =
   'https://api.github.com/repos/gopu-bruno/collection-registry/contents/index.json';
+
+// Website index source — toggle by commenting/uncommenting (only ONE active).
+// VITE_REGISTRY_INDEX_URL overrides either when set.
+//
+// TESTING (active): raw CDN — no rate limit while developing.
+export const REGISTRY_INDEX_URL = (import.meta.env && import.meta.env.VITE_REGISTRY_INDEX_URL) || REGISTRY_INDEX_RAW_URL;
+// DEMOING: GitHub contents API — reflects git immediately. Comment the line
+// above and uncomment the line below before a demo.
+// export const REGISTRY_INDEX_URL = (import.meta.env && import.meta.env.VITE_REGISTRY_INDEX_URL) || REGISTRY_INDEX_CONTENTS_API_URL;
 
 export async function fetchRegistryIndex(url = REGISTRY_INDEX_URL) {
   const isGithubApi = url.startsWith('https://api.github.com/');
