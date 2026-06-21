@@ -707,11 +707,17 @@ const getCollectionGitData = async (gitRootPath, collectionPath) => {
 
 const cloneGitRepository = async (win, data) => {
   return new Promise((resolve, reject) => {
-    const { url, path, processUid } = data;
+    const { url, path, processUid, ref } = data;
     const git = getSimpleGitInstanceForPath(path);
 
+    // `ref` pins the clone to a published version tag (e.g. "stripe-stripe-api@1.0.0")
+    // so installing v1.0.0 actually gets v1.0.0. --branch accepts tags as well as
+    // branches; when omitted the remote's default branch is used.
+    const cloneOpts = ['--progress'];
+    if (ref) cloneOpts.push('--branch', ref);
+
     git.outputHandler(handleGitOutput({ win, processUid, sendStdout: true }));
-    git.clone(url, path, ['--progress'], (err, res) => {
+    git.clone(url, path, cloneOpts, (err, res) => {
       if (err) {
         reject(err);
         return;

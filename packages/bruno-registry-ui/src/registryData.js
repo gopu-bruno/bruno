@@ -83,3 +83,131 @@ export async function fetchRegistryIndex(url = REGISTRY_INDEX_URL) {
   if (!res.ok) throw new Error(`Registry index fetch failed: ${res.status}`);
   return res.json();
 }
+
+// --- Live release stats (GitHub Releases) -----------------------------------
+// The index already carries CI-baked usage stats (version/downloads/releases),
+// but a collection's detail page re-fetches them straight from GitHub so the
+// install count is current. Same model as the build pipeline: a version is a
+// git tag, the install count is the sum of asset downloads, and several
+// collections in one repo are told apart by a tag prefix.
+const RELEASE_ASSET_RE = /opencollection.*\.ya?ml$/i;
+
+export function parseGithubRepo(url) {
+  const m = String(url || '').match(/github\.com[/:]([^/]+)\/([^/.\s]+)/i);
+  return m ? { owner: m[1], repo: m[2].replace(/\.git$/, '') } : null;
+}
+
+export function releaseTagPrefix(collection) {
+  const s = (collection && collection.source) || {};
+  if (s.tagPrefix) return s.tagPrefix;
+  if (s.subdir && s.subdir !== '.') return `${s.subdir}@`;
+  return null; // whole-repo: every release belongs to this collection
+}
+
+function stripTagPrefix(tag, prefix) {
+  if (prefix && tag.startsWith(prefix)) return tag.slice(prefix.length);
+  return String(tag).replace(/^v/, '');
+}
+
+function assetDownloads(release) {
+  return (release.assets || []).reduce((s, a) => s + (a.download_count || 0), 0);
+}
+
+function pickAsset(release) {
+  const assets = release.assets || [];
+  return assets.find((a) => RELEASE_ASSET_RE.test(a.name)) || assets[0] || null;
+}
+
+// Reduce raw GitHub releases to one collection's stats (shape matches the index).
+export function deriveReleaseStats(releases, collection) {
+  const prefix = releaseTagPrefix(collection);
+  const mine = (releases || []).filter((r) => (prefix ? (r.tag_name || '').startsWith(prefix) : true));
+  const sorted = mine.slice().sort((a, b) => new Date(b.published_at || 0) - new Date(a.published_at || 0));
+  const latest = sorted.find((r) => !r.prerelease) || sorted[0] || null;
+  const latestAsset = latest ? pickAsset(latest) : null;
+  return {
+    version: latest ? stripTagPrefix(latest.tag_name, prefix) : null,
+    downloads: mine.reduce((s, r) => s + assetDownloads(r), 0),
+    releaseCount: mine.length,
+    latestAssetUrl: latestAsset ? latestAsset.browser_download_url : null,
+    releases: sorted.slice(0, 20).map((r) => {
+      const asset = pickAsset(r);
+      return {
+        version: stripTagPrefix(r.tag_name, prefix),
+        tag: r.tag_name,
+        publishedAt: r.published_at,
+        downloads: assetDownloads(r),
+        prerelease: !!r.prerelease,
+        notes: (r.body || '').split('\n').find((l) => l.trim()) || '',
+        assetUrl: asset ? asset.browser_download_url : null,
+      };
+    }),
+  };
+}
+
+// The browser fetch below is UNAUTHENTICATED (a token can't be shipped to the
+// client safely), so it's bound by GitHub's 60 req/hr-per-IP limit. To stay
+// well under it we (a) only fetch on the detail page — never per card,
+// (b) cache per session with a TTL so revisits are free, and (c) degrade
+// silently to the CI-baked index stats on rate-limit/error rather than throw.
+// The baked index.json (refreshed hourly by CI) is always the floor.
+const RELEASE_TTL_MS = 10 * 60 * 1000; // 10 min
+const _releaseMem = new Map(); // slug -> { at, stats }
+
+function readReleaseCache(slug) {
+  const m = _releaseMem.get(slug);
+  if (m && Date.now() - m.at < RELEASE_TTL_MS) return m.stats;
+  try {
+    if (typeof sessionStorage !== 'undefined') {
+      const raw = sessionStorage.getItem('oc-rel:' + slug);
+      if (raw) {
+        const o = JSON.parse(raw);
+        if (Date.now() - o.at < RELEASE_TTL_MS) return o.stats;
+      }
+    }
+  } catch { /* sessionStorage unavailable/full — ignore */ }
+  return undefined;
+}
+
+function writeReleaseCache(slug, stats) {
+  const rec = { at: Date.now(), stats };
+  _releaseMem.set(slug, rec);
+  try {
+    if (typeof sessionStorage !== 'undefined') sessionStorage.setItem('oc-rel:' + slug, JSON.stringify(rec));
+  } catch { /* ignore quota/availability */ }
+}
+
+// Fetch a collection's live release stats from GitHub. Returns null when the
+// repo can't be parsed OR when the live call fails / is rate-limited (the
+// caller then keeps the index-baked stats); zero-stats if the repo has no
+// releases. Pass { force: true } to bypass the session cache (e.g. a Refresh).
+export async function fetchCollectionReleases(collection, { force = false } = {}) {
+  const parsed = parseGithubRepo(collection && collection.source && collection.source.repo);
+  if (!parsed) return null;
+  const slug = `${collection.ns}/${collection.name}`;
+  if (!force) {
+    const cached = readReleaseCache(slug);
+    if (cached !== undefined) return cached;
+  }
+
+  let res;
+  try {
+    res = await fetch(`https://api.github.com/repos/${parsed.owner}/${parsed.repo}/releases?per_page=100`, {
+      cache: 'no-store',
+      headers: { Accept: 'application/vnd.github+json' },
+    });
+  } catch {
+    return null; // network error — fall back to baked stats
+  }
+  if (res.status === 403 || res.status === 429) return null; // rate-limited — degrade silently
+  if (res.status === 404) {
+    const zero = deriveReleaseStats([], collection);
+    writeReleaseCache(slug, zero);
+    return zero;
+  }
+  if (!res.ok) return null;
+  const releases = (await res.json()).filter((r) => !r.draft);
+  const stats = deriveReleaseStats(releases, collection);
+  writeReleaseCache(slug, stats);
+  return stats;
+}

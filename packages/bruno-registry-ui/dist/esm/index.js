@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 
 // Shared icon library — Tabler-style icons (stroke 1.75, 16px default).
 // Pure React + inline SVG; no dependencies. Portable to bruno-app as-is.
@@ -402,12 +402,140 @@ function _toPropertyKey(t) {
 // --- Number formatter ---
 var fmtN = n => n >= 1000 ? (n / 1000).toFixed(n >= 10000 ? 0 : 1) + 'k' : String(n);
 
+// --- Animated count-up ---------------------------------------------------
+// Tweens the displayed number toward `target` whenever it changes, so a count
+// that the host nudges upward visibly ticks rather than jumping. Host-agnostic:
+// the component only animates the value it's given; the host decides when (and
+// how fast) the number grows.
+function useCountUp(target) {
+  var ms = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : 650;
+  var [val, setVal] = useState(target);
+  var fromRef = useRef(target);
+  var rafRef = useRef(0);
+  useEffect(() => {
+    var from = fromRef.current;
+    var to = target;
+    if (from === to) return undefined;
+    var start = null;
+    var step = now => {
+      if (start === null) start = now;
+      var t = Math.min(1, (now - start) / ms);
+      var eased = 1 - Math.pow(1 - t, 3); // easeOutCubic
+      setVal(Math.round(from + (to - from) * eased));
+      if (t < 1) rafRef.current = requestAnimationFrame(step);else fromRef.current = to;
+    };
+    rafRef.current = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(rafRef.current);
+  }, [target, ms]);
+  return val;
+}
+
+// Live install/download stat. Renders an animated, comma-grouped number that
+// ticks when `value` rises, with a brief green "+N" flash on each increase.
+function DownloadStat(_ref) {
+  var {
+    value = 0,
+    label = 'installs',
+    size = 'lg',
+    icon = true
+  } = _ref;
+  var shown = useCountUp(value);
+  var prevRef = useRef(value);
+  var [delta, setDelta] = useState(0);
+  useEffect(() => {
+    var d = value - prevRef.current;
+    prevRef.current = value;
+    if (d > 0) {
+      setDelta(d);
+      var id = setTimeout(() => setDelta(0), 1100);
+      return () => clearTimeout(id);
+    }
+    return undefined;
+  }, [value]);
+  var big = size === 'lg';
+  return /*#__PURE__*/React.createElement("span", {
+    style: {
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: 6,
+      position: 'relative'
+    }
+  }, icon && /*#__PURE__*/React.createElement(Icons.Download, {
+    size: big ? 15 : 13,
+    style: {
+      color: 'var(--fg-subtext-1)'
+    }
+  }), /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontFamily: 'var(--font-mono)',
+      fontWeight: 600,
+      fontSize: big ? 15 : 13,
+      color: 'var(--fg-base)'
+    }
+  }, shown.toLocaleString()), /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: big ? 12.5 : 11.5,
+      color: 'var(--fg-subtext-1)'
+    }
+  }, label), delta > 0 && /*#__PURE__*/React.createElement("span", {
+    style: {
+      position: 'absolute',
+      left: '100%',
+      marginLeft: 8,
+      whiteSpace: 'nowrap',
+      fontSize: 11,
+      fontWeight: 600,
+      color: 'var(--success)',
+      animation: 'oc-flash-up 1.1s ease-out forwards',
+      pointerEvents: 'none'
+    }
+  }, "+", delta.toLocaleString()), /*#__PURE__*/React.createElement("style", null, "@keyframes oc-flash-up { 0% { opacity: 0; transform: translateY(4px); } 25% { opacity: 1; transform: translateY(0); } 100% { opacity: 0; transform: translateY(-6px); } }"));
+}
+
+// Tiny inline sparkline from an array of numbers (e.g. installs/day).
+function Sparkline(_ref2) {
+  var {
+    points = [],
+    width = 180,
+    height = 36,
+    stroke = 'var(--brand)'
+  } = _ref2;
+  if (!points.length) return null;
+  var max = Math.max(...points, 1);
+  var min = Math.min(...points);
+  var span = Math.max(max - min, 1);
+  var coords = points.map((p, i) => {
+    var x = i / Math.max(points.length - 1, 1) * width;
+    var y = height - (p - min) / span * (height - 4) - 2;
+    return "".concat(x.toFixed(1), ",").concat(y.toFixed(1));
+  });
+  var line = 'M ' + coords.join(' L ');
+  return /*#__PURE__*/React.createElement("svg", {
+    width: width,
+    height: height,
+    style: {
+      display: 'block',
+      marginTop: 6
+    },
+    "aria-hidden": true
+  }, /*#__PURE__*/React.createElement("path", {
+    d: "".concat(line, " L ").concat(width, ",").concat(height, " L 0,").concat(height, " Z"),
+    fill: "var(--brand-soft)",
+    stroke: "none"
+  }), /*#__PURE__*/React.createElement("path", {
+    d: line,
+    fill: "none",
+    stroke: stroke,
+    strokeWidth: "1.5"
+  }));
+}
+
 // --- Badges ---
-function VerifiedBadge(_ref) {
+function VerifiedBadge(_ref3) {
   var {
     size = 14,
     title = 'Verified publisher'
-  } = _ref;
+  } = _ref3;
   return /*#__PURE__*/React.createElement("span", {
     title: title,
     style: {
@@ -456,11 +584,11 @@ function CommunityPill() {
     }
   }, "Community");
 }
-function Pill(_ref2) {
+function Pill(_ref4) {
   var {
     children,
     tone = 'neutral'
-  } = _ref2;
+  } = _ref4;
   var tones = {
     neutral: {
       bg: 'var(--bg-surface-0)',
@@ -505,7 +633,7 @@ function Pill(_ref2) {
 }
 
 // --- Buttons ---
-function Btn(_ref3) {
+function Btn(_ref5) {
   var {
     children,
     onClick,
@@ -515,7 +643,7 @@ function Btn(_ref3) {
     style,
     disabled,
     full
-  } = _ref3;
+  } = _ref5;
   var sizes = {
     sm: {
       pad: '5px 10px',
@@ -587,13 +715,13 @@ function Btn(_ref3) {
 }
 
 // --- Hoverable row helper ---
-function Row(_ref4) {
+function Row(_ref6) {
   var {
     children,
     onClick,
     style,
     hoverBg = 'var(--bg-mantle)'
-  } = _ref4;
+  } = _ref6;
   var [h, setH] = useState(false);
   return /*#__PURE__*/React.createElement("div", {
     onClick: onClick,
@@ -607,12 +735,12 @@ function Row(_ref4) {
 }
 
 // --- Collection card (used across Discover / Search) ---
-function CollectionCard(_ref5) {
+function CollectionCard(_ref7) {
   var {
     c,
     onOpen,
     compact
-  } = _ref5;
+  } = _ref7;
   var [h, setH] = useState(false);
   return /*#__PURE__*/React.createElement("div", {
     onClick: () => onOpen && onOpen(c),
@@ -699,7 +827,18 @@ function CollectionCard(_ref5) {
       borderRadius: 4,
       fontFamily: 'var(--font-mono)'
     }
-  }, l))));
+  }, l)), c.downloads != null && /*#__PURE__*/React.createElement("span", {
+    style: {
+      marginLeft: 'auto',
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: 4,
+      fontSize: 11,
+      color: 'var(--fg-subtext-1)'
+    }
+  }, /*#__PURE__*/React.createElement(Icons.Download, {
+    size: 11
+  }), " ", fmtN(c.downloads))));
 }
 
 // Bundled fallback snapshot — opencollection.dev
@@ -825,6 +964,13 @@ var REGISTRY_INDEX_URL = import.meta.env && import.meta.env.VITE_REGISTRY_INDEX_
 function fetchRegistryIndex() {
   return _fetchRegistryIndex.apply(this, arguments);
 }
+
+// --- Live release stats (GitHub Releases) -----------------------------------
+// The index already carries CI-baked usage stats (version/downloads/releases),
+// but a collection's detail page re-fetches them straight from GitHub so the
+// install count is current. Same model as the build pipeline: a version is a
+// git tag, the install count is the sum of asset downloads, and several
+// collections in one repo are told apart by a tag prefix.
 function _fetchRegistryIndex() {
   _fetchRegistryIndex = _asyncToGenerator(function* () {
     var url = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : REGISTRY_INDEX_URL;
@@ -839,6 +985,137 @@ function _fetchRegistryIndex() {
     return res.json();
   });
   return _fetchRegistryIndex.apply(this, arguments);
+}
+var RELEASE_ASSET_RE = /opencollection.*\.ya?ml$/i;
+function parseGithubRepo(url) {
+  var m = String(url || '').match(/github\.com[/:]([^/]+)\/([^/.\s]+)/i);
+  return m ? {
+    owner: m[1],
+    repo: m[2].replace(/\.git$/, '')
+  } : null;
+}
+function releaseTagPrefix(collection) {
+  var s = collection && collection.source || {};
+  if (s.tagPrefix) return s.tagPrefix;
+  if (s.subdir && s.subdir !== '.') return "".concat(s.subdir, "@");
+  return null; // whole-repo: every release belongs to this collection
+}
+function stripTagPrefix(tag, prefix) {
+  if (prefix && tag.startsWith(prefix)) return tag.slice(prefix.length);
+  return String(tag).replace(/^v/, '');
+}
+function assetDownloads(release) {
+  return (release.assets || []).reduce((s, a) => s + (a.download_count || 0), 0);
+}
+function pickAsset(release) {
+  var assets = release.assets || [];
+  return assets.find(a => RELEASE_ASSET_RE.test(a.name)) || assets[0] || null;
+}
+
+// Reduce raw GitHub releases to one collection's stats (shape matches the index).
+function deriveReleaseStats(releases, collection) {
+  var prefix = releaseTagPrefix(collection);
+  var mine = (releases || []).filter(r => prefix ? (r.tag_name || '').startsWith(prefix) : true);
+  var sorted = mine.slice().sort((a, b) => new Date(b.published_at || 0) - new Date(a.published_at || 0));
+  var latest = sorted.find(r => !r.prerelease) || sorted[0] || null;
+  var latestAsset = latest ? pickAsset(latest) : null;
+  return {
+    version: latest ? stripTagPrefix(latest.tag_name, prefix) : null,
+    downloads: mine.reduce((s, r) => s + assetDownloads(r), 0),
+    releaseCount: mine.length,
+    latestAssetUrl: latestAsset ? latestAsset.browser_download_url : null,
+    releases: sorted.slice(0, 20).map(r => {
+      var asset = pickAsset(r);
+      return {
+        version: stripTagPrefix(r.tag_name, prefix),
+        tag: r.tag_name,
+        publishedAt: r.published_at,
+        downloads: assetDownloads(r),
+        prerelease: !!r.prerelease,
+        notes: (r.body || '').split('\n').find(l => l.trim()) || '',
+        assetUrl: asset ? asset.browser_download_url : null
+      };
+    })
+  };
+}
+
+// The browser fetch below is UNAUTHENTICATED (a token can't be shipped to the
+// client safely), so it's bound by GitHub's 60 req/hr-per-IP limit. To stay
+// well under it we (a) only fetch on the detail page — never per card,
+// (b) cache per session with a TTL so revisits are free, and (c) degrade
+// silently to the CI-baked index stats on rate-limit/error rather than throw.
+// The baked index.json (refreshed hourly by CI) is always the floor.
+var RELEASE_TTL_MS = 10 * 60 * 1000; // 10 min
+var _releaseMem = new Map(); // slug -> { at, stats }
+
+function readReleaseCache(slug) {
+  var m = _releaseMem.get(slug);
+  if (m && Date.now() - m.at < RELEASE_TTL_MS) return m.stats;
+  try {
+    if (typeof sessionStorage !== 'undefined') {
+      var raw = sessionStorage.getItem('oc-rel:' + slug);
+      if (raw) {
+        var o = JSON.parse(raw);
+        if (Date.now() - o.at < RELEASE_TTL_MS) return o.stats;
+      }
+    }
+  } catch (_unused) {/* sessionStorage unavailable/full — ignore */}
+  return undefined;
+}
+function writeReleaseCache(slug, stats) {
+  var rec = {
+    at: Date.now(),
+    stats
+  };
+  _releaseMem.set(slug, rec);
+  try {
+    if (typeof sessionStorage !== 'undefined') sessionStorage.setItem('oc-rel:' + slug, JSON.stringify(rec));
+  } catch (_unused2) {/* ignore quota/availability */}
+}
+
+// Fetch a collection's live release stats from GitHub. Returns null when the
+// repo can't be parsed OR when the live call fails / is rate-limited (the
+// caller then keeps the index-baked stats); zero-stats if the repo has no
+// releases. Pass { force: true } to bypass the session cache (e.g. a Refresh).
+function fetchCollectionReleases(_x) {
+  return _fetchCollectionReleases.apply(this, arguments);
+}
+function _fetchCollectionReleases() {
+  _fetchCollectionReleases = _asyncToGenerator(function* (collection) {
+    var {
+      force = false
+    } = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : {};
+    var parsed = parseGithubRepo(collection && collection.source && collection.source.repo);
+    if (!parsed) return null;
+    var slug = "".concat(collection.ns, "/").concat(collection.name);
+    if (!force) {
+      var cached = readReleaseCache(slug);
+      if (cached !== undefined) return cached;
+    }
+    var res;
+    try {
+      res = yield fetch("https://api.github.com/repos/".concat(parsed.owner, "/").concat(parsed.repo, "/releases?per_page=100"), {
+        cache: 'no-store',
+        headers: {
+          Accept: 'application/vnd.github+json'
+        }
+      });
+    } catch (_unused3) {
+      return null; // network error — fall back to baked stats
+    }
+    if (res.status === 403 || res.status === 429) return null; // rate-limited — degrade silently
+    if (res.status === 404) {
+      var zero = deriveReleaseStats([], collection);
+      writeReleaseCache(slug, zero);
+      return zero;
+    }
+    if (!res.ok) return null;
+    var releases = (yield res.json()).filter(r => !r.draft);
+    var stats = deriveReleaseStats(releases, collection);
+    writeReleaseCache(slug, stats);
+    return stats;
+  });
+  return _fetchCollectionReleases.apply(this, arguments);
 }
 
 // "Find and share API collections" page (the registry Discover screen).
@@ -1250,6 +1527,16 @@ var CATEGORY_LABELS = {
   storage: 'Storage & CDN',
   productivity: 'Productivity'
 };
+var fmtDate = iso => {
+  if (!iso) return '';
+  var d = new Date(iso);
+  if (isNaN(d)) return '';
+  return d.toLocaleDateString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric'
+  });
+};
 function CollectionDetailPage(_ref) {
   var {
     collection,
@@ -1386,7 +1673,49 @@ function CollectionDetailPage(_ref) {
       borderRadius: 5,
       fontFamily: 'var(--font-mono)'
     }
-  }, l)))), /*#__PURE__*/React.createElement("div", {
+  }, l))), (c.downloads != null || c.version || c.updated) && /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      gap: 22,
+      flexWrap: 'wrap',
+      alignItems: 'center',
+      marginTop: 16,
+      fontSize: 12.5,
+      color: 'var(--fg-subtext-1)'
+    }
+  }, c.downloads != null && /*#__PURE__*/React.createElement(DownloadStat, {
+    value: c.downloads,
+    label: "installs"
+  }), c.version && /*#__PURE__*/React.createElement("span", {
+    style: {
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: 6
+    }
+  }, /*#__PURE__*/React.createElement(Icons.GitBranch, {
+    size: 13
+  }), /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontFamily: 'var(--font-mono)',
+      color: 'var(--fg-base)'
+    }
+  }, "v", c.version)), c.releaseCount > 0 && /*#__PURE__*/React.createElement("span", {
+    style: {
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: 6
+    }
+  }, /*#__PURE__*/React.createElement(Icons.GitCommit, {
+    size: 13
+  }), " ", c.releaseCount, " ", c.releaseCount === 1 ? 'release' : 'releases'), c.updated && /*#__PURE__*/React.createElement("span", {
+    style: {
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: 6
+    }
+  }, /*#__PURE__*/React.createElement(Icons.Clock, {
+    size: 13
+  }), " Updated ", c.updated))), /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
       flexDirection: 'column',
@@ -1443,7 +1772,123 @@ function CollectionDetailPage(_ref) {
     style: {
       fontFamily: 'var(--font-mono)'
     }
-  }, ".bru"), " files. Nothing runs on install.")), /*#__PURE__*/React.createElement("aside", null, /*#__PURE__*/React.createElement("h3", {
+  }, ".bru"), " files. Nothing runs on install."), c.releases && c.releases.length > 0 ? /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 32
+    }
+  }, /*#__PURE__*/React.createElement("h3", {
+    style: {
+      fontSize: 15,
+      fontWeight: 600,
+      marginBottom: 12
+    }
+  }, "Versions ", /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: 'var(--fg-subtext-1)',
+      fontWeight: 400
+    }
+  }, "(", c.releaseCount, ")")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      border: '1px solid var(--border-1)',
+      borderRadius: 8,
+      background: '#fff',
+      overflow: 'hidden'
+    }
+  }, c.releases.map((r, i) => /*#__PURE__*/React.createElement("div", {
+    key: r.tag,
+    style: {
+      display: 'flex',
+      gap: 14,
+      alignItems: 'center',
+      padding: '12px 16px',
+      borderBottom: i === c.releases.length - 1 ? 'none' : '1px solid var(--border-1)'
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      minWidth: 110
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontFamily: 'var(--font-mono)',
+      fontSize: 13,
+      fontWeight: 600,
+      display: 'flex',
+      alignItems: 'center',
+      gap: 6
+    }
+  }, "v", r.version, i === 0 && !r.prerelease && /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 9.5,
+      fontWeight: 600,
+      textTransform: 'uppercase',
+      letterSpacing: '0.04em',
+      color: 'var(--success)',
+      background: 'var(--success-bg)',
+      padding: '1px 5px',
+      borderRadius: 4
+    }
+  }, "Latest"), r.prerelease && /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 9.5,
+      fontWeight: 600,
+      textTransform: 'uppercase',
+      letterSpacing: '0.04em',
+      color: 'var(--fg-subtext-1)',
+      background: 'var(--bg-surface-0)',
+      padding: '1px 5px',
+      borderRadius: 4
+    }
+  }, "Pre")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: 'var(--fg-subtext-1)',
+      marginTop: 2
+    }
+  }, fmtDate(r.publishedAt))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      flex: 1,
+      minWidth: 0,
+      fontSize: 12.5,
+      color: 'var(--fg-subtext-2)',
+      lineHeight: 1.45,
+      textWrap: 'pretty'
+    }
+  }, r.notes || /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: 'var(--fg-subtext-0)'
+    }
+  }, "No release notes")), /*#__PURE__*/React.createElement("span", {
+    style: {
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: 5,
+      fontSize: 12,
+      color: 'var(--fg-subtext-1)',
+      flexShrink: 0
+    }
+  }, /*#__PURE__*/React.createElement(Icons.Download, {
+    size: 12
+  }), " ", fmtN(r.downloads)))))) : /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 32,
+      padding: '20px',
+      border: '1px dashed var(--border-1)',
+      borderRadius: 8,
+      background: 'var(--bg-mantle)',
+      fontSize: 12.5,
+      color: 'var(--fg-subtext-1)',
+      lineHeight: 1.55
+    }
+  }, /*#__PURE__*/React.createElement("strong", {
+    style: {
+      color: 'var(--fg-base)',
+      fontWeight: 600
+    }
+  }, "No released versions yet."), " Once a release is published on the source repo (a git tag carrying an ", /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontFamily: 'var(--font-mono)'
+    }
+  }, "opencollection.yml"), " asset), its versions and install counts appear here automatically.")), /*#__PURE__*/React.createElement("aside", null, /*#__PURE__*/React.createElement("h3", {
     style: {
       fontSize: 13,
       fontWeight: 600,
@@ -1458,6 +1903,13 @@ function CollectionDetailPage(_ref) {
   }, /*#__PURE__*/React.createElement(Detail, {
     label: "Publisher",
     value: c.ns
+  }), c.version && /*#__PURE__*/React.createElement(Detail, {
+    label: "Latest version",
+    value: /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontFamily: 'var(--font-mono)'
+      }
+    }, "v", c.version)
   }), c.category && /*#__PURE__*/React.createElement(Detail, {
     label: "Category",
     value: CATEGORY_LABELS[c.category] || c.category
@@ -1667,5 +2119,5 @@ function NavItem(_ref2) {
   }), " ", item.label);
 }
 
-export { Btn, CollectionCard, CollectionDetailPage, CommunityPill, DEFAULT_REGISTRY, FindAndSharePage, Ic, Icons, OfficialPill, PUBLIC_CATEGORIES, PUBLIC_FEATURED, PUBLIC_TRENDING, Pill, REGISTRY_DATA, REGISTRY_INDEX_CONTENTS_API_URL, REGISTRY_INDEX_RAW_URL, REGISTRY_INDEX_URL, Row, Sidebar, VerifiedBadge, fetchRegistryIndex, fmtN, getRegistryData };
+export { Btn, CollectionCard, CollectionDetailPage, CommunityPill, DEFAULT_REGISTRY, DownloadStat, FindAndSharePage, Ic, Icons, OfficialPill, PUBLIC_CATEGORIES, PUBLIC_FEATURED, PUBLIC_TRENDING, Pill, REGISTRY_DATA, REGISTRY_INDEX_CONTENTS_API_URL, REGISTRY_INDEX_RAW_URL, REGISTRY_INDEX_URL, Row, Sidebar, Sparkline, VerifiedBadge, deriveReleaseStats, fetchCollectionReleases, fetchRegistryIndex, fmtN, getRegistryData, parseGithubRepo, releaseTagPrefix };
 //# sourceMappingURL=index.js.map

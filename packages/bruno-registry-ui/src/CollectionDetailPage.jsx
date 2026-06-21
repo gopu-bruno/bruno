@@ -7,11 +7,18 @@
 // at install time, so we don't fabricate a request list here.
 import React, { useState } from 'react';
 import { Icons } from './icons.jsx';
-import { VerifiedBadge, OfficialPill, Btn } from './primitives.jsx';
+import { VerifiedBadge, OfficialPill, Btn, DownloadStat, fmtN } from './primitives.jsx';
 
 const CATEGORY_LABELS = {
   payments: 'Payments', ai: 'AI & ML', auth: 'Auth & Identity', devops: 'DevOps & Infra',
   comms: 'Communications', data: 'Data & Analytics', storage: 'Storage & CDN', productivity: 'Productivity',
+};
+
+const fmtDate = (iso) => {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d)) return '';
+  return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
 };
 
 export function CollectionDetailPage({
@@ -76,6 +83,27 @@ export function CollectionDetailPage({
                 }}>{l}</span>
               ))}
             </div>
+            {(c.downloads != null || c.version || c.updated) && (
+              <div style={{ display: 'flex', gap: 22, flexWrap: 'wrap', alignItems: 'center', marginTop: 16, fontSize: 12.5, color: 'var(--fg-subtext-1)' }}>
+                {c.downloads != null && <DownloadStat value={c.downloads} label="installs" />}
+                {c.version && (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    <Icons.GitBranch size={13} />
+                    <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--fg-base)' }}>v{c.version}</span>
+                  </span>
+                )}
+                {c.releaseCount > 0 && (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    <Icons.GitCommit size={13} /> {c.releaseCount} {c.releaseCount === 1 ? 'release' : 'releases'}
+                  </span>
+                )}
+                {c.updated && (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    <Icons.Clock size={13} /> Updated {c.updated}
+                  </span>
+                )}
+              </div>
+            )}
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, flexShrink: 0 }}>
@@ -101,12 +129,52 @@ export function CollectionDetailPage({
             Requests are fetched from the source repository at install time and written into your workspace as
             native <span style={{ fontFamily: 'var(--font-mono)' }}>.bru</span> files. Nothing runs on install.
           </p>
+
+          {/* Versions = git tags with a published release. Download count is the
+              sum of the release's asset downloads, read live from GitHub. */}
+          {c.releases && c.releases.length > 0 ? (
+            <div style={{ marginTop: 32 }}>
+              <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 12 }}>
+                Versions <span style={{ color: 'var(--fg-subtext-1)', fontWeight: 400 }}>({c.releaseCount})</span>
+              </h3>
+              <div style={{ border: '1px solid var(--border-1)', borderRadius: 8, background: '#fff', overflow: 'hidden' }}>
+                {c.releases.map((r, i) => (
+                  <div key={r.tag} style={{
+                    display: 'flex', gap: 14, alignItems: 'center', padding: '12px 16px',
+                    borderBottom: i === c.releases.length - 1 ? 'none' : '1px solid var(--border-1)',
+                  }}>
+                    <div style={{ minWidth: 110 }}>
+                      <div style={{ fontFamily: 'var(--font-mono)', fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
+                        v{r.version}
+                        {i === 0 && !r.prerelease && <span style={{ fontSize: 9.5, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--success)', background: 'var(--success-bg)', padding: '1px 5px', borderRadius: 4 }}>Latest</span>}
+                        {r.prerelease && <span style={{ fontSize: 9.5, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--fg-subtext-1)', background: 'var(--bg-surface-0)', padding: '1px 5px', borderRadius: 4 }}>Pre</span>}
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--fg-subtext-1)', marginTop: 2 }}>{fmtDate(r.publishedAt)}</div>
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0, fontSize: 12.5, color: 'var(--fg-subtext-2)', lineHeight: 1.45, textWrap: 'pretty' }}>
+                      {r.notes || <span style={{ color: 'var(--fg-subtext-0)' }}>No release notes</span>}
+                    </div>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'var(--fg-subtext-1)', flexShrink: 0 }}>
+                      <Icons.Download size={12} /> {fmtN(r.downloads)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div style={{ marginTop: 32, padding: '20px', border: '1px dashed var(--border-1)', borderRadius: 8, background: 'var(--bg-mantle)', fontSize: 12.5, color: 'var(--fg-subtext-1)', lineHeight: 1.55 }}>
+              <strong style={{ color: 'var(--fg-base)', fontWeight: 600 }}>No released versions yet.</strong> Once a release is
+              published on the source repo (a git tag carrying an <span style={{ fontFamily: 'var(--font-mono)' }}>opencollection.yml</span> asset),
+              its versions and install counts appear here automatically.
+            </div>
+          )}
         </div>
 
         <aside>
           <h3 style={{ fontSize: 13, fontWeight: 600, marginBottom: 12 }}>Details</h3>
           <dl style={{ display: 'grid', gap: 12, margin: 0 }}>
             <Detail label="Publisher" value={c.ns} />
+            {c.version && <Detail label="Latest version" value={<span style={{ fontFamily: 'var(--font-mono)' }}>v{c.version}</span>} />}
             {c.category && <Detail label="Category" value={CATEGORY_LABELS[c.category] || c.category} />}
             {c.langs && c.langs.length > 0 && <Detail label="Languages" value={c.langs.join(', ')} />}
             {sourceUrl && (

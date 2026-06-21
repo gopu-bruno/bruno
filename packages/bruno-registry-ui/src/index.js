@@ -15,6 +15,8 @@ export {
   Btn,
   Row,
   CollectionCard,
+  DownloadStat,
+  Sparkline,
 } from './primitives.jsx';
 export {
   PUBLIC_FEATURED,
@@ -27,4 +29,8 @@ export {
   REGISTRY_INDEX_RAW_URL,
   REGISTRY_INDEX_CONTENTS_API_URL,
   fetchRegistryIndex,
+  fetchCollectionReleases,
+  deriveReleaseStats,
+  parseGithubRepo,
+  releaseTagPrefix,
 } from './registryData.js';

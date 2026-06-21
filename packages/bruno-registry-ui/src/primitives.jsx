@@ -1,9 +1,95 @@
 // Shared UI primitives — badges, pills, buttons, collection card.
 // Pure React + inline styles + CSS variables. Portable to bruno-app as-is.
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Icons } from './icons.jsx';
 
 // --- Number formatter ---
 export const fmtN = (n) => (n >= 1000 ? (n / 1000).toFixed(n >= 10000 ? 0 : 1) + 'k' : String(n));
+
+// --- Animated count-up ---------------------------------------------------
+// Tweens the displayed number toward `target` whenever it changes, so a count
+// that the host nudges upward visibly ticks rather than jumping. Host-agnostic:
+// the component only animates the value it's given; the host decides when (and
+// how fast) the number grows.
+function useCountUp(target, ms = 650) {
+  const [val, setVal] = useState(target);
+  const fromRef = useRef(target);
+  const rafRef = useRef(0);
+  useEffect(() => {
+    const from = fromRef.current;
+    const to = target;
+    if (from === to) return undefined;
+    let start = null;
+    const step = (now) => {
+      if (start === null) start = now;
+      const t = Math.min(1, (now - start) / ms);
+      const eased = 1 - Math.pow(1 - t, 3); // easeOutCubic
+      setVal(Math.round(from + (to - from) * eased));
+      if (t < 1) rafRef.current = requestAnimationFrame(step);
+      else fromRef.current = to;
+    };
+    rafRef.current = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(rafRef.current);
+  }, [target, ms]);
+  return val;
+}
+
+// Live install/download stat. Renders an animated, comma-grouped number that
+// ticks when `value` rises, with a brief green "+N" flash on each increase.
+export function DownloadStat({ value = 0, label = 'installs', size = 'lg', icon = true }) {
+  const shown = useCountUp(value);
+  const prevRef = useRef(value);
+  const [delta, setDelta] = useState(0);
+  useEffect(() => {
+    const d = value - prevRef.current;
+    prevRef.current = value;
+    if (d > 0) {
+      setDelta(d);
+      const id = setTimeout(() => setDelta(0), 1100);
+      return () => clearTimeout(id);
+    }
+    return undefined;
+  }, [value]);
+
+  const big = size === 'lg';
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, position: 'relative' }}>
+      {icon && <Icons.Download size={big ? 15 : 13} style={{ color: 'var(--fg-subtext-1)' }} />}
+      <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600, fontSize: big ? 15 : 13, color: 'var(--fg-base)' }}>
+        {shown.toLocaleString()}
+      </span>
+      <span style={{ fontSize: big ? 12.5 : 11.5, color: 'var(--fg-subtext-1)' }}>{label}</span>
+      {delta > 0 && (
+        <span style={{
+          position: 'absolute', left: '100%', marginLeft: 8, whiteSpace: 'nowrap',
+          fontSize: 11, fontWeight: 600, color: 'var(--success)',
+          animation: 'oc-flash-up 1.1s ease-out forwards', pointerEvents: 'none',
+        }}>+{delta.toLocaleString()}</span>
+      )}
+      <style>{`@keyframes oc-flash-up { 0% { opacity: 0; transform: translateY(4px); } 25% { opacity: 1; transform: translateY(0); } 100% { opacity: 0; transform: translateY(-6px); } }`}</style>
+    </span>
+  );
+}
+
+// Tiny inline sparkline from an array of numbers (e.g. installs/day).
+export function Sparkline({ points = [], width = 180, height = 36, stroke = 'var(--brand)' }) {
+  if (!points.length) return null;
+  const max = Math.max(...points, 1);
+  const min = Math.min(...points);
+  const span = Math.max(max - min, 1);
+  const coords = points.map((p, i) => {
+    const x = (i / Math.max(points.length - 1, 1)) * width;
+    const y = height - ((p - min) / span) * (height - 4) - 2;
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  });
+  const line = 'M ' + coords.join(' L ');
+  return (
+    <svg width={width} height={height} style={{ display: 'block', marginTop: 6 }} aria-hidden>
+      <path d={`${line} L ${width},${height} L 0,${height} Z`} fill="var(--brand-soft)" stroke="none" />
+      <path d={line} fill="none" stroke={stroke} strokeWidth="1.5" />
+    </svg>
+  );
+}
 
 // --- Badges ---
 export function VerifiedBadge({ size = 14, title = 'Verified publisher' }) {
@@ -132,6 +218,14 @@ export function CollectionCard({ c, onOpen, compact }) {
             padding: '2px 7px', borderRadius: 4, fontFamily: 'var(--font-mono)',
           }}>{l}</span>
         ))}
+        {c.downloads != null && (
+          <span style={{
+            marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 4,
+            fontSize: 11, color: 'var(--fg-subtext-1)',
+          }}>
+            <Icons.Download size={11} /> {fmtN(c.downloads)}
+          </span>
+        )}
       </div>
     </div>
   );

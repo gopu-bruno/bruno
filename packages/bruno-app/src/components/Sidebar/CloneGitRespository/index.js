@@ -24,7 +24,7 @@ import SkippedPathsWarning from 'components/SkippedPathsWarning';
 import toast from 'react-hot-toast';
 import get from 'lodash/get';
 
-const CloneGitRepository = ({ onClose, onFinish, collectionRepositoryUrl = null, collectionSubdir = null }) => {
+const CloneGitRepository = ({ onClose, onFinish, collectionRepositoryUrl = null, collectionSubdir = null, collectionRef = null }) => {
   const [collectionPaths, setCollectionPaths] = useState([]);
   const [skippedCollectionPaths, setSkippedCollectionPaths] = useState([]);
   const [selectedCollectionPaths, setSelectedCollectionPaths] = useState([]);
@@ -133,7 +133,9 @@ const CloneGitRepository = ({ onClose, onFinish, collectionRepositoryUrl = null,
         const repoName = getRepoNameFromUrl(repositoryUrl);
         const targetPath = path.join(collectionLocation, repoName);
 
-        await dispatch(cloneGitRepository({ url: values.repositoryUrl, path: targetPath, processUid }));
+        // collectionRef pins the clone to a published version tag (when the
+        // registry passed one); without it the repo's default branch is used.
+        await dispatch(cloneGitRepository({ url: values.repositoryUrl, path: targetPath, processUid, ref: collectionRef || undefined }));
 
         cloneFinished();
         dispatch(removeGitOperationProgress(processUid));

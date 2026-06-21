@@ -36,6 +36,9 @@ const Registry = () => {
   const [installRepoUrl, setInstallRepoUrl] = useState(null);
   // The collection's subdir within that repo, so the clone scopes to just it.
   const [installSubdir, setInstallSubdir] = useState(null);
+  // The git ref to clone — the latest published version tag when one exists,
+  // so installing gets that version (not whatever HEAD happens to be).
+  const [installRef, setInstallRef] = useState(null);
 
   useEffect(() => {
     let alive = true;
@@ -62,6 +65,12 @@ const Registry = () => {
   // Install = clone the collection's source git repo into the workspace. We open
   // the existing CloneGitRepository flow pre-filled with the repo URL, reusing
   // its location picker, progress, scan and open-into-workspace logic.
+  // Latest published version tag for a collection (from the baked/live release
+  // stats), e.g. "stripe-stripe-api@1.0.0". Null when the collection has no
+  // releases yet — then we fall back to source.ref (the default branch).
+  const latestReleaseTag = (c) => (c && c.releases && c.releases[0] && c.releases[0].tag) || null;
+  const installRefFor = (c) => latestReleaseTag(c) || (c && c.source && c.source.ref) || null;
+
   const handleInstall = (c) => {
     const repo = c?.source?.repo;
     if (!repo) {
@@ -69,6 +78,7 @@ const Registry = () => {
       return;
     }
     setInstallSubdir(c?.source?.subdir || null);
+    setInstallRef(installRefFor(c));
     setInstallRepoUrl(repo);
   };
 
@@ -80,7 +90,12 @@ const Registry = () => {
           onBack={goBrowse}
           onInstall={() => handleInstall(view.collection)}
           installLabel="Clone & add"
-          installCommand={view.collection?.source?.repo ? `git clone ${view.collection.source.repo}` : undefined}
+          installCommand={(() => {
+            const repo = view.collection?.source?.repo;
+            if (!repo) return undefined;
+            const tag = latestReleaseTag(view.collection);
+            return tag ? `git clone --branch ${tag} ${repo}` : `git clone ${repo}`;
+          })()}
         />
       ) : (
         <FindAndSharePage onOpenCollection={openCollection} onSearch={handleSearch} registryData={data} />
@@ -90,14 +105,17 @@ const Registry = () => {
         <CloneGitRepository
           collectionRepositoryUrl={installRepoUrl}
           collectionSubdir={installSubdir}
+          collectionRef={installRef}
           onClose={() => {
             setInstallRepoUrl(null);
             setInstallSubdir(null);
+            setInstallRef(null);
           }}
           onFinish={() => {
             // Collection opened into the workspace — leave the registry takeover.
             setInstallRepoUrl(null);
             setInstallSubdir(null);
+            setInstallRef(null);
             dispatch(hideRegistryPage());
           }}
         />
