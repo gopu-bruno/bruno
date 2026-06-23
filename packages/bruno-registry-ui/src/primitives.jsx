@@ -169,6 +169,61 @@ export function Btn({ children, onClick, variant = 'primary', size = 'md', icon,
   );
 }
 
+// --- Modal shell (ported from the design; used by the publish flow) ---------
+export function Modal({ children, onClose, width = 520 }) {
+  return (
+    <div onClick={onClose} style={{
+      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', zIndex: 100,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+    }}>
+      <div onClick={(e) => e.stopPropagation()} style={{
+        width, maxWidth: '94vw', maxHeight: '92vh', background: '#fff', borderRadius: 8,
+        boxShadow: 'var(--shadow-lg)', overflow: 'auto', animation: 'oc-modal-in 0.15s ease',
+      }}>
+        {children}
+      </div>
+      <style>{`@keyframes oc-modal-in { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }`}</style>
+    </div>
+  );
+}
+
+export function ModalHeader({ title, sub, onClose }) {
+  return (
+    <div style={{ padding: '18px 22px', borderBottom: '1px solid var(--border-1)', display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+      <div style={{ flex: 1 }}>
+        <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>{title}</h3>
+        {sub && <div style={{ fontSize: 12.5, color: 'var(--fg-subtext-1)' }}>{sub}</div>}
+      </div>
+      {onClose && <button onClick={onClose} style={{ background: 'transparent', border: 0, color: 'var(--fg-subtext-1)', cursor: 'pointer', padding: 4 }}><Icons.X size={16} /></button>}
+    </div>
+  );
+}
+
+export function ModalFooter({ children }) {
+  return (
+    <div style={{ padding: '14px 22px', borderTop: '1px solid var(--border-1)', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+      {children}
+    </div>
+  );
+}
+
+export function inputStyle(extra) {
+  return {
+    padding: '7px 10px', fontSize: 13, border: '1px solid var(--border-1)', borderRadius: 4,
+    background: '#fff', color: 'var(--fg-base)', outline: 'none', width: '100%', fontFamily: 'inherit', ...extra,
+  };
+}
+
+export function Field({ label, children, hint }) {
+  return (
+    <label style={{ display: 'grid', gap: 4 }}>
+      <span style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--fg-subtext-1)' }}>{label}</span>
+      {children}
+      {hint && <span style={{ fontSize: 11, color: 'var(--fg-subtext-1)' }}>{hint}</span>}
+    </label>
+  );
+}
+
 // --- Hoverable row helper ---
 export function Row({ children, onClick, style, hoverBg = 'var(--bg-mantle)' }) {
   const [h, setH] = useState(false);

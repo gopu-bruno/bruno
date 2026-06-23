@@ -97,6 +97,44 @@ export function parseGithubRepo(url) {
   return m ? { owner: m[1], repo: m[2].replace(/\.git$/, '') } : null;
 }
 
+// Build the release tag for a (source, version) pair — mirror of the publish
+// convention: "<subdir>@<version>" in a shared repo, else "v<version>".
+export function buildReleaseTag(source, version) {
+  const v = String(version || '').trim() || '0.0.0';
+  const s = source || {};
+  if (s.tagPrefix) return `${s.tagPrefix}${v}`;
+  if (s.subdir && s.subdir !== '.') return `${s.subdir}@${v}`;
+  return `v${v}`;
+}
+
+// Build the registry entry (collections/<ns>/<name>.json) from collected
+// publish metadata. Only authored fields — usage stats stay derived.
+export function buildRegistryEntry(meta) {
+  const m = meta || {};
+  const langs = (m.langs || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const source = { type: 'git', repo: (m.repo || '').trim(), ref: (m.ref || 'main').trim() };
+  const subdir = (m.subdir || '').trim();
+  if (subdir && subdir !== '.') source.subdir = subdir;
+  const entry = {
+    ns: (m.ns || '').trim(),
+    name: (m.name || '').trim(),
+    title: (m.title || '').trim(),
+    tagline: (m.tagline || '').trim(),
+    category: m.category || 'devops',
+    verified: false,
+    official: false,
+    featured: false,
+    trending: false,
+    source,
+  };
+  if (langs.length) entry.langs = langs;
+  if ((m.color || '').trim()) entry.color = m.color.trim();
+  return entry;
+}
+
 export function releaseTagPrefix(collection) {
   const s = (collection && collection.source) || {};
   if (s.tagPrefix) return s.tagPrefix;

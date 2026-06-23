@@ -4,6 +4,7 @@
 // styles + CSS variables (tokens.css) so both hosts can mount it unchanged.
 export { FindAndSharePage } from './FindAndSharePage.jsx';
 export { CollectionDetailPage } from './CollectionDetailPage.jsx';
+export { PublishCollectionModal } from './PublishCollectionModal.jsx';
 export { Sidebar } from './Sidebar.jsx';
 export { Icons, Ic } from './icons.jsx';
 export {
@@ -17,6 +18,11 @@ export {
   CollectionCard,
   DownloadStat,
   Sparkline,
+  Modal,
+  ModalHeader,
+  ModalFooter,
+  Field,
+  inputStyle,
 } from './primitives.jsx';
 export {
   PUBLIC_FEATURED,
@@ -33,4 +39,6 @@ export {
   deriveReleaseStats,
   parseGithubRepo,
   releaseTagPrefix,
+  buildReleaseTag,
+  buildRegistryEntry,
 } from './registryData.js';

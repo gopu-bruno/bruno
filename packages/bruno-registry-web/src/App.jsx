@@ -7,7 +7,7 @@
 // the workspace) reusing the same registry-ui components unchanged.
 import React, { useEffect, useState } from 'react';
 import '@usebruno/registry-ui/tokens.css';
-import { Sidebar, FindAndSharePage, CollectionDetailPage, fetchRegistryIndex, fetchCollectionReleases } from '@usebruno/registry-ui';
+import { Sidebar, FindAndSharePage, CollectionDetailPage, PublishCollectionModal, fetchRegistryIndex, fetchCollectionReleases } from '@usebruno/registry-ui';
 
 export default function App() {
   // Live data from the git-backed index; null until it resolves (page falls
@@ -19,6 +19,8 @@ export default function App() {
   // Fresh release stats for the open collection, re-fetched live from GitHub so
   // the install count on the detail page is current (not just the last CI build).
   const [liveStats, setLiveStats] = useState(null);
+  // Publish modal (collects metadata → emits registry entry + release tag).
+  const [showPublish, setShowPublish] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -84,7 +86,7 @@ export default function App() {
 
   return (
     <div className="oc-registry" style={{ height: '100vh', width: '100%', display: 'flex', overflow: 'hidden', background: 'var(--bg-base)' }}>
-      <Sidebar active="browse" onSelect={goBrowse} />
+      <Sidebar active="browse" onSelect={goBrowse} onPublish={() => setShowPublish(true)} />
       <div style={{ flex: 1, minWidth: 0, height: '100%' }}>
         {view.name === 'detail' ? (
           <CollectionDetailPage
@@ -104,6 +106,13 @@ export default function App() {
           />
         )}
       </div>
+
+      {showPublish && (
+        <PublishCollectionModal
+          onClose={() => setShowPublish(false)}
+          onPublish={(result) => console.log('[web] publish', result)}
+        />
+      )}
     </div>
   );
 }

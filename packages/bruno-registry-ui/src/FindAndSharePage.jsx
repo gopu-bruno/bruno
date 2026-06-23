@@ -13,12 +13,13 @@
 //   onSwitchRegistry, onAddRegistry   optional registry-switcher hooks (reserved)
 import React, { useState } from 'react';
 import { Icons } from './icons.jsx';
-import { Pill, VerifiedBadge, OfficialPill, Row, CollectionCard } from './primitives.jsx';
+import { Pill, VerifiedBadge, OfficialPill, Row, CollectionCard, Btn } from './primitives.jsx';
 import { getRegistryData, DEFAULT_REGISTRY } from './registryData.js';
 
 export function FindAndSharePage({
   onOpenCollection,
   onSearch,
+  onPublish,
   registries,
   currentRegistryId,
   onSwitchRegistry,
@@ -55,6 +56,11 @@ export function FindAndSharePage({
             <Pill tone={isPrivate ? 'muted' : 'brand'}>{isPrivate ? 'Private · Org-scoped' : 'Public Registry · Beta'}</Pill>
             <span style={{ fontFamily: 'var(--font-mono)' }}>{currentReg.host}</span>
             {currentReg.auth && <span style={{ color: 'var(--fg-subtext-2)' }}>· {currentReg.auth.account}</span>}
+            {onPublish && (
+              <span style={{ marginLeft: 'auto' }}>
+                <Btn variant="secondary" size="sm" icon={<Icons.Upload size={13} />} onClick={onPublish}>Publish</Btn>
+              </span>
+            )}
           </div>
           <h1 style={{ fontSize: 36, fontWeight: 700, letterSpacing: '-0.02em', lineHeight: 1.1, marginBottom: 10 }}>
             {isPrivate ? <>Collections inside <span style={{ color: 'var(--brand-text)' }}>{currentReg.name}</span>.</> : 'Find and share API collections.'}

@@ -716,14 +716,142 @@ function Btn(_ref5) {
   }, icon, children);
 }
 
+// --- Modal shell (ported from the design; used by the publish flow) ---------
+function Modal(_ref6) {
+  var {
+    children,
+    onClose,
+    width = 520
+  } = _ref6;
+  return /*#__PURE__*/React.createElement("div", {
+    onClick: onClose,
+    style: {
+      position: 'fixed',
+      inset: 0,
+      background: 'rgba(0,0,0,0.35)',
+      zIndex: 100,
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center'
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    onClick: e => e.stopPropagation(),
+    style: {
+      width,
+      maxWidth: '94vw',
+      maxHeight: '92vh',
+      background: '#fff',
+      borderRadius: 8,
+      boxShadow: 'var(--shadow-lg)',
+      overflow: 'auto',
+      animation: 'oc-modal-in 0.15s ease'
+    }
+  }, children), /*#__PURE__*/React.createElement("style", null, "@keyframes oc-modal-in { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }"));
+}
+function ModalHeader(_ref7) {
+  var {
+    title,
+    sub,
+    onClose
+  } = _ref7;
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: '18px 22px',
+      borderBottom: '1px solid var(--border-1)',
+      display: 'flex',
+      alignItems: 'flex-start',
+      gap: 10
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      flex: 1
+    }
+  }, /*#__PURE__*/React.createElement("h3", {
+    style: {
+      fontSize: 15,
+      fontWeight: 600,
+      marginBottom: 4
+    }
+  }, title), sub && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12.5,
+      color: 'var(--fg-subtext-1)'
+    }
+  }, sub)), onClose && /*#__PURE__*/React.createElement("button", {
+    onClick: onClose,
+    style: {
+      background: 'transparent',
+      border: 0,
+      color: 'var(--fg-subtext-1)',
+      cursor: 'pointer',
+      padding: 4
+    }
+  }, /*#__PURE__*/React.createElement(Icons.X, {
+    size: 16
+  })));
+}
+function ModalFooter(_ref8) {
+  var {
+    children
+  } = _ref8;
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: '14px 22px',
+      borderTop: '1px solid var(--border-1)',
+      display: 'flex',
+      justifyContent: 'flex-end',
+      gap: 8
+    }
+  }, children);
+}
+function inputStyle(extra) {
+  return _objectSpread2({
+    padding: '7px 10px',
+    fontSize: 13,
+    border: '1px solid var(--border-1)',
+    borderRadius: 4,
+    background: '#fff',
+    color: 'var(--fg-base)',
+    outline: 'none',
+    width: '100%',
+    fontFamily: 'inherit'
+  }, extra);
+}
+function Field(_ref9) {
+  var {
+    label,
+    children,
+    hint
+  } = _ref9;
+  return /*#__PURE__*/React.createElement("label", {
+    style: {
+      display: 'grid',
+      gap: 4
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 11,
+      fontWeight: 600,
+      textTransform: 'uppercase',
+      letterSpacing: '0.04em',
+      color: 'var(--fg-subtext-1)'
+    }
+  }, label), children, hint && /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 11,
+      color: 'var(--fg-subtext-1)'
+    }
+  }, hint));
+}
+
 // --- Hoverable row helper ---
-function Row(_ref6) {
+function Row(_ref0) {
   var {
     children,
     onClick,
     style,
     hoverBg = 'var(--bg-mantle)'
-  } = _ref6;
+  } = _ref0;
   var [h, setH] = React.useState(false);
   return /*#__PURE__*/React.createElement("div", {
     onClick: onClick,
@@ -737,12 +865,12 @@ function Row(_ref6) {
 }
 
 // --- Collection card (used across Discover / Search) ---
-function CollectionCard(_ref7) {
+function CollectionCard(_ref1) {
   var {
     c,
     onOpen,
     compact
-  } = _ref7;
+  } = _ref1;
   var [h, setH] = React.useState(false);
   return /*#__PURE__*/React.createElement("div", {
     onClick: () => onOpen && onOpen(c),
@@ -996,6 +1124,45 @@ function parseGithubRepo(url) {
     repo: m[2].replace(/\.git$/, '')
   } : null;
 }
+
+// Build the release tag for a (source, version) pair — mirror of the publish
+// convention: "<subdir>@<version>" in a shared repo, else "v<version>".
+function buildReleaseTag(source, version) {
+  var v = String(version || '').trim() || '0.0.0';
+  var s = source || {};
+  if (s.tagPrefix) return "".concat(s.tagPrefix).concat(v);
+  if (s.subdir && s.subdir !== '.') return "".concat(s.subdir, "@").concat(v);
+  return "v".concat(v);
+}
+
+// Build the registry entry (collections/<ns>/<name>.json) from collected
+// publish metadata. Only authored fields — usage stats stay derived.
+function buildRegistryEntry(meta) {
+  var m = meta || {};
+  var langs = (m.langs || '').split(',').map(s => s.trim()).filter(Boolean);
+  var source = {
+    type: 'git',
+    repo: (m.repo || '').trim(),
+    ref: (m.ref || 'main').trim()
+  };
+  var subdir = (m.subdir || '').trim();
+  if (subdir && subdir !== '.') source.subdir = subdir;
+  var entry = {
+    ns: (m.ns || '').trim(),
+    name: (m.name || '').trim(),
+    title: (m.title || '').trim(),
+    tagline: (m.tagline || '').trim(),
+    category: m.category || 'devops',
+    verified: false,
+    official: false,
+    featured: false,
+    trending: false,
+    source
+  };
+  if (langs.length) entry.langs = langs;
+  if ((m.color || '').trim()) entry.color = m.color.trim();
+  return entry;
+}
 function releaseTagPrefix(collection) {
   var s = collection && collection.source || {};
   if (s.tagPrefix) return s.tagPrefix;
@@ -1137,6 +1304,7 @@ function FindAndSharePage(_ref) {
   var {
     onOpenCollection,
     onSearch,
+    onPublish,
     registries,
     currentRegistryId,
     onSwitchRegistry,
@@ -1194,7 +1362,18 @@ function FindAndSharePage(_ref) {
     style: {
       color: 'var(--fg-subtext-2)'
     }
-  }, "\xB7 ", currentReg.auth.account)), /*#__PURE__*/React.createElement("h1", {
+  }, "\xB7 ", currentReg.auth.account), onPublish && /*#__PURE__*/React.createElement("span", {
+    style: {
+      marginLeft: 'auto'
+    }
+  }, /*#__PURE__*/React.createElement(Btn, {
+    variant: "secondary",
+    size: "sm",
+    icon: /*#__PURE__*/React.createElement(Icons.Upload, {
+      size: 13
+    }),
+    onClick: onPublish
+  }, "Publish"))), /*#__PURE__*/React.createElement("h1", {
     style: {
       fontSize: 36,
       fontWeight: 700,
@@ -2005,6 +2184,889 @@ function InstallCommand(_ref3) {
   }), copied ? 'Copied' : 'Copy'));
 }
 
+var CATEGORIES = [['payments', 'Payments'], ['ai', 'AI & ML'], ['auth', 'Auth & Identity'], ['devops', 'DevOps & Infra'], ['comms', 'Communications'], ['data', 'Data & Analytics'], ['storage', 'Storage & CDN'], ['productivity', 'Productivity']];
+var normRepo = u => String(u || '').toLowerCase().trim().replace(/\.git$/, '').replace(/\/+$/, '');
+var normSub = s => String(s || '').replace(/^\.?\/+/, '').replace(/\/+$/, '');
+function PublishCollectionModal(_ref) {
+  var {
+    onClose,
+    onPublish,
+    onPublishRelease,
+    onListCollection,
+    localCollections,
+    onResolveCollectionMeta,
+    registryEntries,
+    initialMeta
+  } = _ref;
+  var canPublish = typeof onPublishRelease === 'function';
+  var canList = typeof onListCollection === 'function';
+  var hasPicker = canPublish && Array.isArray(localCollections) && localCollections.length > 0;
+  var [meta, setMeta] = React.useState(_objectSpread2({
+    ns: '',
+    name: '',
+    title: '',
+    tagline: '',
+    category: 'payments',
+    version: '1.0.0',
+    repo: '',
+    subdir: '',
+    langs: '',
+    pat: ''
+  }, initialMeta));
+  var [step, setStep] = React.useState(hasPicker ? 'pick' : 'release');
+  var [selected, setSelected] = React.useState(null);
+  var [resolving, setResolving] = React.useState(false);
+  var [result, setResult] = React.useState(null); // release result
+  var [prResult, setPrResult] = React.useState(null); // listing PR result
+  var [error, setError] = React.useState(null);
+  var set = (k, v) => setMeta(m => _objectSpread2(_objectSpread2({}, m), {}, {
+    [k]: v
+  }));
+  var repoOk = !!parseGithubRepo(meta.repo);
+  var entry = buildRegistryEntry(meta);
+  var tag = buildReleaseTag(entry.source, meta.version);
+  var parsed = parseGithubRepo(meta.repo);
+  var entryPath = "collections/".concat(entry.ns || '<ns>', "/").concat(entry.name || '<name>', ".json");
+  var entryJson = JSON.stringify(entry, null, 2);
+  var ghCmd = "gh release create '".concat(tag, "' opencollection.yml --repo ").concat(parsed ? "".concat(parsed.owner, "/").concat(parsed.repo) : '<owner>/<repo>');
+  var findListed = (repo, subdir) => (registryEntries || []).find(e => e && e.source && normRepo(e.source.repo) === normRepo(repo) && normSub(e.source.subdir) === normSub(subdir));
+  var alreadyListed = !!findListed(meta.repo, meta.subdir);
+  var slug = s => String(s || '').toLowerCase().trim().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '');
+  var chooseCollection = /*#__PURE__*/function () {
+    var _ref2 = _asyncToGenerator(function* (c) {
+      setSelected(c);
+      setMeta(m => _objectSpread2(_objectSpread2({}, m), {}, {
+        name: m.name || slug(c.name),
+        title: m.title || c.name
+      }));
+      setStep('release');
+      if (!onResolveCollectionMeta) return;
+      setResolving(true);
+      try {
+        var extra = yield onResolveCollectionMeta(c);
+        var repo = extra && extra.repo || '';
+        var subdir = extra && extra.subdir != null ? extra.subdir : '';
+        var listed = repo ? findListed(repo, subdir) : null;
+        setMeta(m => _objectSpread2(_objectSpread2({}, m), {}, {
+          repo: repo || m.repo,
+          subdir: subdir != null ? subdir : m.subdir,
+          // If it's already listed, mirror its registry metadata; else prefill ns from the owner.
+          ns: listed && listed.ns || m.ns || extra && extra.owner || '',
+          name: listed && listed.name || m.name || slug(c.name),
+          title: listed && listed.title || m.title || c.name,
+          tagline: listed && listed.tagline || m.tagline,
+          category: listed && listed.category || m.category
+        }));
+      } catch (_unused) {
+        /* leave for manual entry */
+      } finally {
+        setResolving(false);
+      }
+    });
+    return function chooseCollection(_x) {
+      return _ref2.apply(this, arguments);
+    };
+  }();
+
+  // Step 1 of the real flow: cut the release on the user's own repo.
+  var submitRelease = /*#__PURE__*/function () {
+    var _ref3 = _asyncToGenerator(function* () {
+      setError(null);
+      if (canPublish) {
+        if (!(repoOk && meta.version.trim() && meta.pat.trim())) return;
+        setStep('publishing');
+        try {
+          var res = yield onPublishRelease({
+            meta,
+            entry,
+            tag,
+            name: entry.title || tag,
+            body: entry.tagline,
+            collection: selected
+          });
+          setResult(res || {});
+          setStep(alreadyListed || !canList ? 'done' : 'list');
+        } catch (e) {
+          setError(e && e.message || 'Publish failed.');
+          setStep('release');
+        }
+        return;
+      }
+      // Emit mode (website): just generate the artifacts.
+      if (!(meta.ns.trim() && meta.name.trim() && meta.title.trim() && meta.tagline.trim() && repoOk)) return;
+      setStep('done');
+      if (onPublish) onPublish({
+        meta,
+        entry,
+        entryPath,
+        tag,
+        ghCmd
+      });
+    });
+    return function submitRelease() {
+      return _ref3.apply(this, arguments);
+    };
+  }();
+
+  // Step 2 (first-time only): open the listing PR to the registry.
+  var submitList = /*#__PURE__*/function () {
+    var _ref4 = _asyncToGenerator(function* () {
+      setError(null);
+      if (!(meta.ns.trim() && meta.name.trim() && meta.title.trim() && meta.tagline.trim())) return;
+      setStep('listing');
+      try {
+        var res = yield onListCollection({
+          entry,
+          meta
+        });
+        setPrResult(res || {});
+        setStep('done');
+      } catch (e) {
+        setError(e && e.message || 'Failed to open the listing PR.');
+        setStep('list');
+      }
+    });
+    return function submitList() {
+      return _ref4.apply(this, arguments);
+    };
+  }();
+  var stepperSteps = alreadyListed ? ['Select', 'Publish'] : ['Select', 'Publish', 'List'];
+  var stepperCurrent = step === 'pick' ? 1 : step === 'release' ? 2 : step === 'list' ? 3 : 0;
+  return /*#__PURE__*/React.createElement(Modal, {
+    onClose: onClose,
+    width: 620
+  }, step === 'pick' ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(ModalHeader, {
+    title: "Publish a collection",
+    sub: "Pick a collection from your workspace to push to the registry.",
+    onClose: onClose
+  }), hasPicker && /*#__PURE__*/React.createElement(PublishStepper, {
+    steps: stepperSteps,
+    current: stepperCurrent
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: '14px 22px',
+      display: 'grid',
+      gap: 8,
+      maxHeight: '60vh',
+      overflow: 'auto'
+    }
+  }, localCollections.map(c => /*#__PURE__*/React.createElement("button", {
+    key: c.uid || c.name,
+    onClick: () => chooseCollection(c),
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: 12,
+      textAlign: 'left',
+      width: '100%',
+      padding: '12px 14px',
+      border: '1px solid var(--border-1)',
+      borderRadius: 6,
+      background: '#fff',
+      cursor: 'pointer',
+      fontFamily: 'inherit'
+    }
+  }, /*#__PURE__*/React.createElement(Icons.Folder, {
+    size: 18,
+    style: {
+      color: 'var(--fg-subtext-1)',
+      flexShrink: 0
+    }
+  }), /*#__PURE__*/React.createElement("span", {
+    style: {
+      flex: 1,
+      minWidth: 0
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 13,
+      fontWeight: 500,
+      display: 'block'
+    }
+  }, c.name), c.pathname && /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 11,
+      color: 'var(--fg-subtext-1)',
+      fontFamily: 'var(--font-mono)',
+      display: 'block',
+      overflow: 'hidden',
+      textOverflow: 'ellipsis',
+      whiteSpace: 'nowrap'
+    }
+  }, c.pathname)), /*#__PURE__*/React.createElement(Icons.ChevRight, {
+    size: 14,
+    style: {
+      color: 'var(--fg-subtext-2)',
+      flexShrink: 0
+    }
+  })))), /*#__PURE__*/React.createElement(ModalFooter, null, /*#__PURE__*/React.createElement(Btn, {
+    variant: "ghost",
+    onClick: onClose
+  }, "Cancel"))) : step === 'release' ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(ModalHeader, {
+    title: canPublish ? 'Publish a version' : 'Publish a collection',
+    sub: canPublish ? 'Cut a release on your repo — the tag is the version, the asset is the install.' : 'Tell the registry how to list it. We’ll generate the entry + the version tag.',
+    onClose: onClose
+  }), hasPicker && /*#__PURE__*/React.createElement(PublishStepper, {
+    steps: stepperSteps,
+    current: stepperCurrent
+  }), selected && /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: '10px 22px 0',
+      display: 'flex',
+      alignItems: 'center',
+      gap: 8,
+      fontSize: 12,
+      color: 'var(--fg-subtext-1)'
+    }
+  }, /*#__PURE__*/React.createElement(Icons.Folder, {
+    size: 13
+  }), " Publishing ", /*#__PURE__*/React.createElement("strong", {
+    style: {
+      color: 'var(--fg-base)',
+      fontWeight: 600
+    }
+  }, selected.name), alreadyListed ? /*#__PURE__*/React.createElement(Pill, {
+    tone: "success"
+  }, "Listed") : /*#__PURE__*/React.createElement(Pill, {
+    tone: "muted"
+  }, "Not listed yet"), hasPicker && /*#__PURE__*/React.createElement("button", {
+    onClick: () => setStep('pick'),
+    style: {
+      marginLeft: 'auto',
+      background: 'transparent',
+      border: 0,
+      color: 'var(--link)',
+      cursor: 'pointer',
+      fontSize: 12,
+      fontFamily: 'inherit'
+    }
+  }, "Change")), canPublish ?
+  /*#__PURE__*/
+  // Real release form — minimal: repo (auto) + version + token.
+  React.createElement("div", {
+    style: {
+      padding: '18px 22px',
+      display: 'grid',
+      gap: 14
+    }
+  }, /*#__PURE__*/React.createElement(Field, {
+    label: "Source repo",
+    hint: resolving ? 'Resolving from the collection’s git remote…' : 'The release is cut here — your own repo.'
+  }, /*#__PURE__*/React.createElement("input", {
+    value: meta.repo,
+    onChange: e => set('repo', e.target.value),
+    placeholder: resolving ? 'Resolving…' : 'https://github.com/owner/repo',
+    style: inputStyle({
+      fontFamily: 'var(--font-mono)',
+      borderColor: meta.repo && !repoOk ? 'var(--danger)' : 'var(--border-1)'
+    })
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'grid',
+      gridTemplateColumns: '1fr 1fr',
+      gap: 10
+    }
+  }, /*#__PURE__*/React.createElement(Field, {
+    label: "Version",
+    hint: "Becomes the release tag."
+  }, /*#__PURE__*/React.createElement("input", {
+    value: meta.version,
+    onChange: e => set('version', e.target.value),
+    placeholder: "1.0.0",
+    style: inputStyle({
+      fontFamily: 'var(--font-mono)'
+    })
+  })), /*#__PURE__*/React.createElement(Field, {
+    label: "Release tag"
+  }, /*#__PURE__*/React.createElement("div", {
+    style: _objectSpread2({}, inputStyle({
+      background: 'var(--bg-crust)',
+      display: 'flex',
+      alignItems: 'center'
+    }))
+  }, /*#__PURE__*/React.createElement("code", {
+    style: {
+      fontFamily: 'var(--font-mono)',
+      fontSize: 12,
+      color: 'var(--fg-base)'
+    }
+  }, tag)))), /*#__PURE__*/React.createElement(Field, {
+    label: "GitHub token",
+    hint: "Creates the release on your behalf. Needs contents:write. Not stored."
+  }, /*#__PURE__*/React.createElement("input", {
+    type: "password",
+    value: meta.pat,
+    onChange: e => set('pat', e.target.value),
+    placeholder: "ghp_\u2026",
+    autoComplete: "off",
+    style: inputStyle({
+      fontFamily: 'var(--font-mono)'
+    })
+  })), !alreadyListed && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11.5,
+      color: 'var(--fg-subtext-1)',
+      lineHeight: 1.5,
+      display: 'flex',
+      gap: 7,
+      alignItems: 'flex-start'
+    }
+  }, /*#__PURE__*/React.createElement(Icons.Rss, {
+    size: 13,
+    style: {
+      marginTop: 1,
+      flexShrink: 0
+    }
+  }), "Not on the registry yet \u2014 after the release we\u2019ll collect its listing details and open the PR."), error && /*#__PURE__*/React.createElement(ErrorNote, null, error)) :
+  /*#__PURE__*/
+  // Emit mode (website): full metadata form, generates artifacts.
+  React.createElement(EmitForm, {
+    meta: meta,
+    set: set,
+    repoOk: repoOk,
+    tag: tag,
+    error: error
+  }), /*#__PURE__*/React.createElement(ModalFooter, null, /*#__PURE__*/React.createElement(Btn, {
+    variant: "ghost",
+    onClick: onClose
+  }, "Cancel"), /*#__PURE__*/React.createElement(Btn, {
+    variant: "primary",
+    onClick: submitRelease,
+    disabled: canPublish ? !(repoOk && meta.version.trim() && meta.pat.trim()) : !(meta.ns.trim() && meta.name.trim() && meta.title.trim() && meta.tagline.trim() && repoOk)
+  }, canPublish ? 'Publish version' : 'Generate entry'))) : step === 'publishing' ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(ModalHeader, {
+    title: "Publishing\u2026",
+    sub: "".concat(tag)
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: '34px 22px',
+      textAlign: 'center',
+      fontSize: 13,
+      color: 'var(--fg-subtext-1)',
+      fontFamily: 'var(--font-mono)'
+    }
+  }, "Creating release \xB7 uploading opencollection.yml\u2026")) : step === 'list' ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(ModalHeader, {
+    title: "List on the registry",
+    sub: "First-time listing \u2014 opens a PR adding your entry so it shows on the find page.",
+    onClose: onClose
+  }), hasPicker && /*#__PURE__*/React.createElement(PublishStepper, {
+    steps: stepperSteps,
+    current: stepperCurrent
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: '18px 22px',
+      display: 'grid',
+      gap: 14
+    }
+  }, result && result.releaseUrl && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      color: 'var(--success)',
+      display: 'flex',
+      alignItems: 'center',
+      gap: 6
+    }
+  }, /*#__PURE__*/React.createElement(Icons.Check, {
+    size: 13
+  }), " Release published. Now list it (one time)."), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'grid',
+      gridTemplateColumns: '1fr 1fr',
+      gap: 10
+    }
+  }, /*#__PURE__*/React.createElement(Field, {
+    label: "Publisher (ns)"
+  }, /*#__PURE__*/React.createElement("input", {
+    value: meta.ns,
+    onChange: e => set('ns', e.target.value),
+    placeholder: "stripe",
+    style: inputStyle({
+      fontFamily: 'var(--font-mono)'
+    })
+  })), /*#__PURE__*/React.createElement(Field, {
+    label: "Collection name"
+  }, /*#__PURE__*/React.createElement("input", {
+    value: meta.name,
+    onChange: e => set('name', e.target.value),
+    placeholder: "stripe-api",
+    style: inputStyle({
+      fontFamily: 'var(--font-mono)'
+    })
+  }))), /*#__PURE__*/React.createElement(Field, {
+    label: "Display title"
+  }, /*#__PURE__*/React.createElement("input", {
+    value: meta.title,
+    onChange: e => set('title', e.target.value),
+    placeholder: "Stripe API",
+    style: inputStyle()
+  })), /*#__PURE__*/React.createElement(Field, {
+    label: "Tagline",
+    hint: "One sentence shown in search."
+  }, /*#__PURE__*/React.createElement("textarea", {
+    value: meta.tagline,
+    onChange: e => set('tagline', e.target.value),
+    rows: 2,
+    placeholder: "Payments, customers and webhooks for the Stripe REST API.",
+    style: inputStyle({
+      minHeight: 52,
+      resize: 'vertical'
+    })
+  })), /*#__PURE__*/React.createElement(Field, {
+    label: "Category"
+  }, /*#__PURE__*/React.createElement("select", {
+    value: meta.category,
+    onChange: e => set('category', e.target.value),
+    style: inputStyle()
+  }, CATEGORIES.map(_ref5 => {
+    var [id, label] = _ref5;
+    return /*#__PURE__*/React.createElement("option", {
+      key: id,
+      value: id
+    }, label);
+  }))), error && /*#__PURE__*/React.createElement(ErrorNote, null, error)), /*#__PURE__*/React.createElement(ModalFooter, null, /*#__PURE__*/React.createElement(Btn, {
+    variant: "ghost",
+    onClick: () => setStep('done')
+  }, "Skip for now"), /*#__PURE__*/React.createElement(Btn, {
+    variant: "primary",
+    onClick: submitList,
+    disabled: !(meta.ns.trim() && meta.name.trim() && meta.title.trim() && meta.tagline.trim())
+  }, "Open registry PR"))) : step === 'listing' ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(ModalHeader, {
+    title: "Opening PR\u2026",
+    sub: entryPath
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: '34px 22px',
+      textAlign: 'center',
+      fontSize: 13,
+      color: 'var(--fg-subtext-1)',
+      fontFamily: 'var(--font-mono)'
+    }
+  }, "Creating branch \xB7 adding entry \xB7 opening pull request\u2026")) : canPublish ?
+  /*#__PURE__*/
+  // Real "done" — release succeeded; listing status varies.
+  React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(ModalHeader, {
+    title: "Published",
+    sub: tag,
+    onClose: onClose
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: '18px 22px',
+      display: 'grid',
+      gap: 14
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: 10,
+      fontSize: 13
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      width: 28,
+      height: 28,
+      borderRadius: '50%',
+      background: 'var(--success-bg)',
+      color: 'var(--success)',
+      display: 'inline-flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      flexShrink: 0
+    }
+  }, /*#__PURE__*/React.createElement(Icons.Check, {
+    size: 16
+  })), /*#__PURE__*/React.createElement("span", null, "Release published \u2014 downloads of ", /*#__PURE__*/React.createElement("code", {
+    style: {
+      fontFamily: 'var(--font-mono)'
+    }
+  }, "opencollection.yml"), " now count as installs.")), result && result.releaseUrl && /*#__PURE__*/React.createElement("a", {
+    href: result.releaseUrl,
+    target: "_blank",
+    rel: "noreferrer",
+    style: {
+      color: 'var(--link)',
+      fontSize: 12.5,
+      wordBreak: 'break-all'
+    }
+  }, result.releaseUrl), /*#__PURE__*/React.createElement("div", {
+    style: {
+      paddingTop: 10,
+      borderTop: '1px solid var(--border-1)'
+    }
+  }, alreadyListed ? /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12.5,
+      color: 'var(--fg-subtext-1)',
+      display: 'flex',
+      gap: 7,
+      alignItems: 'flex-start'
+    }
+  }, /*#__PURE__*/React.createElement(Icons.Check, {
+    size: 14,
+    style: {
+      color: 'var(--success)',
+      marginTop: 1,
+      flexShrink: 0
+    }
+  }), "Already listed on the registry \u2014 its version & install count refresh on the next index rebuild. No PR needed.") : prResult && prResult.prUrl ? /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12.5
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginBottom: 4
+    }
+  }, "Listing PR opened", prResult.viaFork ? ' from your fork' : '', " \u2014 once a maintainer merges it, the collection appears on the find page:"), /*#__PURE__*/React.createElement("a", {
+    href: prResult.prUrl,
+    target: "_blank",
+    rel: "noreferrer",
+    style: {
+      color: 'var(--link)',
+      wordBreak: 'break-all'
+    }
+  }, prResult.prUrl)) : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12.5,
+      color: 'var(--fg-subtext-1)',
+      marginBottom: 8
+    }
+  }, "Not listed yet \u2014 add this entry via a PR to the registry to appear on the find page:"), /*#__PURE__*/React.createElement(CopyBlock, {
+    label: /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontFamily: 'var(--font-mono)',
+        fontWeight: 400,
+        color: 'var(--fg-subtext-1)'
+      }
+    }, entryPath),
+    text: entryJson,
+    mono: true
+  })))), /*#__PURE__*/React.createElement(ModalFooter, null, /*#__PURE__*/React.createElement(Btn, {
+    variant: "primary",
+    onClick: onClose
+  }, "Close"))) :
+  /*#__PURE__*/
+  // Emit-mode "done" (website): the two artifacts to apply manually.
+  React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(ModalHeader, {
+    title: "Ready to publish",
+    sub: "Two artifacts \u2014 add the entry to the registry, and cut the release on your repo.",
+    onClose: onClose
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: '18px 22px',
+      display: 'grid',
+      gap: 18
+    }
+  }, /*#__PURE__*/React.createElement(CopyBlock, {
+    label: /*#__PURE__*/React.createElement(React.Fragment, null, "1 \xB7 Registry entry ", /*#__PURE__*/React.createElement("span", {
+      style: {
+        color: 'var(--fg-subtext-1)',
+        fontFamily: 'var(--font-mono)',
+        fontWeight: 400
+      }
+    }, entryPath)),
+    text: entryJson,
+    hint: "Add this file via a PR to the collection-registry repo.",
+    mono: true
+  }), /*#__PURE__*/React.createElement(CopyBlock, {
+    label: /*#__PURE__*/React.createElement(React.Fragment, null, "2 \xB7 Cut the release ", /*#__PURE__*/React.createElement(Pill, {
+      tone: "brand"
+    }, "v", meta.version)),
+    text: ghCmd,
+    hint: "Creates the git tag + opencollection.yml asset GitHub counts as installs."
+  })), /*#__PURE__*/React.createElement(ModalFooter, null, /*#__PURE__*/React.createElement(Btn, {
+    variant: "ghost",
+    onClick: () => setStep('release')
+  }, "Back"), /*#__PURE__*/React.createElement(Btn, {
+    variant: "primary",
+    onClick: onClose
+  }, "Done"))));
+}
+function EmitForm(_ref6) {
+  var {
+    meta,
+    set,
+    repoOk,
+    tag,
+    error
+  } = _ref6;
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: '18px 22px',
+      display: 'grid',
+      gap: 14
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'grid',
+      gridTemplateColumns: '1fr 1fr',
+      gap: 10
+    }
+  }, /*#__PURE__*/React.createElement(Field, {
+    label: "Publisher (ns)",
+    hint: "Your owner/org handle."
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      border: '1px solid var(--border-1)',
+      borderRadius: 4,
+      overflow: 'hidden',
+      background: '#fff'
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      padding: '7px 8px 7px 10px',
+      color: 'var(--fg-subtext-1)',
+      fontFamily: 'var(--font-mono)',
+      fontSize: 12
+    }
+  }, "@"), /*#__PURE__*/React.createElement("input", {
+    value: meta.ns,
+    onChange: e => set('ns', e.target.value),
+    placeholder: "stripe",
+    style: inputStyle({
+      border: 0,
+      fontFamily: 'var(--font-mono)',
+      paddingLeft: 0
+    })
+  }))), /*#__PURE__*/React.createElement(Field, {
+    label: "Collection name"
+  }, /*#__PURE__*/React.createElement("input", {
+    value: meta.name,
+    onChange: e => set('name', e.target.value),
+    placeholder: "stripe-api",
+    style: inputStyle({
+      fontFamily: 'var(--font-mono)'
+    })
+  }))), /*#__PURE__*/React.createElement(Field, {
+    label: "Display title"
+  }, /*#__PURE__*/React.createElement("input", {
+    value: meta.title,
+    onChange: e => set('title', e.target.value),
+    placeholder: "Stripe API",
+    style: inputStyle()
+  })), /*#__PURE__*/React.createElement(Field, {
+    label: "Tagline",
+    hint: "One sentence shown in search."
+  }, /*#__PURE__*/React.createElement("textarea", {
+    value: meta.tagline,
+    onChange: e => set('tagline', e.target.value),
+    rows: 2,
+    placeholder: "Payments, customers and webhooks for the Stripe REST API.",
+    style: inputStyle({
+      minHeight: 52,
+      resize: 'vertical'
+    })
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'grid',
+      gridTemplateColumns: '1fr 1fr',
+      gap: 10
+    }
+  }, /*#__PURE__*/React.createElement(Field, {
+    label: "Category"
+  }, /*#__PURE__*/React.createElement("select", {
+    value: meta.category,
+    onChange: e => set('category', e.target.value),
+    style: inputStyle()
+  }, CATEGORIES.map(_ref7 => {
+    var [id, label] = _ref7;
+    return /*#__PURE__*/React.createElement("option", {
+      key: id,
+      value: id
+    }, label);
+  }))), /*#__PURE__*/React.createElement(Field, {
+    label: "Version",
+    hint: "Becomes the release tag."
+  }, /*#__PURE__*/React.createElement("input", {
+    value: meta.version,
+    onChange: e => set('version', e.target.value),
+    placeholder: "1.0.0",
+    style: inputStyle({
+      fontFamily: 'var(--font-mono)'
+    })
+  }))), /*#__PURE__*/React.createElement(Field, {
+    label: "Source repo",
+    hint: "The GitHub repo the collection lives in."
+  }, /*#__PURE__*/React.createElement("input", {
+    value: meta.repo,
+    onChange: e => set('repo', e.target.value),
+    placeholder: "https://github.com/owner/repo",
+    style: inputStyle({
+      fontFamily: 'var(--font-mono)',
+      borderColor: meta.repo && !repoOk ? 'var(--danger)' : 'var(--border-1)'
+    })
+  })), /*#__PURE__*/React.createElement(Field, {
+    label: "Subdir",
+    hint: "Path within the repo, if not at the root. Sets the tag prefix."
+  }, /*#__PURE__*/React.createElement("input", {
+    value: meta.subdir,
+    onChange: e => set('subdir', e.target.value),
+    placeholder: "stripe-stripe-api",
+    style: inputStyle({
+      fontFamily: 'var(--font-mono)'
+    })
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11.5,
+      color: 'var(--fg-subtext-1)',
+      display: 'flex',
+      alignItems: 'center',
+      gap: 8
+    }
+  }, /*#__PURE__*/React.createElement(Icons.GitBranch, {
+    size: 13
+  }), " Release tag:\xA0", /*#__PURE__*/React.createElement("code", {
+    style: {
+      fontFamily: 'var(--font-mono)',
+      color: 'var(--fg-base)',
+      background: 'var(--bg-crust)',
+      padding: '1px 6px',
+      borderRadius: 3
+    }
+  }, tag)), error && /*#__PURE__*/React.createElement(ErrorNote, null, error));
+}
+function ErrorNote(_ref8) {
+  var {
+    children
+  } = _ref8;
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      color: 'var(--danger)',
+      background: 'var(--danger-bg, rgba(220,50,50,0.08))',
+      border: '1px solid var(--border-1)',
+      borderRadius: 6,
+      padding: '8px 10px'
+    }
+  }, children);
+}
+
+// Step indicator (design's wizard stepper).
+function PublishStepper(_ref9) {
+  var {
+    steps,
+    current
+  } = _ref9;
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      padding: '12px 22px 0',
+      gap: 6
+    }
+  }, steps.map((s, i) => {
+    var n = i + 1;
+    var done = current > n;
+    var active = current === n;
+    return /*#__PURE__*/React.createElement("div", {
+      key: s,
+      style: {
+        flex: 1,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        width: 20,
+        height: 20,
+        borderRadius: '50%',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontSize: 11,
+        fontWeight: 600,
+        flexShrink: 0,
+        background: done ? 'var(--success)' : active ? 'var(--brand)' : 'var(--bg-surface-0)',
+        color: done || active ? '#fff' : 'var(--fg-subtext-1)'
+      }
+    }, done ? '✓' : n), /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 12,
+        color: active ? 'var(--fg-base)' : 'var(--fg-subtext-1)',
+        fontWeight: active ? 500 : 400
+      }
+    }, s), i < steps.length - 1 && /*#__PURE__*/React.createElement("div", {
+      style: {
+        flex: 1,
+        height: 1,
+        background: done ? 'var(--success)' : 'var(--border-1)'
+      }
+    }));
+  }));
+}
+function CopyBlock(_ref0) {
+  var {
+    label,
+    text,
+    hint,
+    mono
+  } = _ref0;
+  var [copied, setCopied] = React.useState(false);
+  var copy = () => {
+    if (navigator.clipboard) navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1400);
+    }).catch(() => {});
+  };
+  return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginBottom: 6
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 12.5,
+      fontWeight: 600,
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: 8
+    }
+  }, label), /*#__PURE__*/React.createElement("button", {
+    onClick: copy,
+    style: {
+      border: '1px solid var(--border-1)',
+      background: 'var(--bg-base)',
+      borderRadius: 5,
+      padding: '3px 9px',
+      cursor: 'pointer',
+      fontSize: 11.5,
+      color: 'var(--fg-subtext-1)',
+      fontFamily: 'inherit',
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: 5
+    }
+  }, copied ? /*#__PURE__*/React.createElement(Icons.Check, {
+    size: 12
+  }) : /*#__PURE__*/React.createElement(Icons.Command, {
+    size: 12
+  }), copied ? 'Copied' : 'Copy')), /*#__PURE__*/React.createElement("pre", {
+    style: {
+      margin: 0,
+      padding: '10px 12px',
+      background: 'var(--bg-crust)',
+      border: '1px solid var(--border-1)',
+      borderRadius: 6,
+      fontFamily: 'var(--font-mono)',
+      fontSize: mono ? 11.5 : 12,
+      color: 'var(--fg-base)',
+      whiteSpace: 'pre-wrap',
+      wordBreak: 'break-word',
+      overflow: 'auto',
+      maxHeight: mono ? 260 : 'none',
+      lineHeight: 1.5
+    }
+  }, text), hint && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: 'var(--fg-subtext-1)',
+      marginTop: 6
+    }
+  }, hint));
+}
+
 // App-shell sidebar — logo + navigation.
 // Host-agnostic: the host passes the active item and an onSelect callback, so
 // the same sidebar mounts in the website and (later) inside bruno-app's surface.
@@ -2017,7 +3079,8 @@ var NAV_ITEMS = [{
 function Sidebar(_ref) {
   var {
     active = 'browse',
-    onSelect
+    onSelect,
+    onPublish
   } = _ref;
   return /*#__PURE__*/React.createElement("aside", {
     style: {
@@ -2041,7 +3104,27 @@ function Sidebar(_ref) {
     item: it,
     active: active === it.id,
     onClick: () => onSelect && onSelect(it.id)
-  }))));
+  }))), onPublish && /*#__PURE__*/React.createElement("button", {
+    onClick: onPublish,
+    style: {
+      marginTop: 'auto',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 7,
+      padding: '8px 10px',
+      borderRadius: 6,
+      border: '1px solid var(--border-1)',
+      cursor: 'pointer',
+      background: '#fff',
+      color: 'var(--fg-base)',
+      fontSize: 13,
+      fontWeight: 500,
+      fontFamily: 'inherit'
+    }
+  }, /*#__PURE__*/React.createElement(Icons.Upload, {
+    size: 14
+  }), " Publish"));
 }
 function Logo() {
   return /*#__PURE__*/React.createElement("div", {
@@ -2127,14 +3210,19 @@ exports.CollectionDetailPage = CollectionDetailPage;
 exports.CommunityPill = CommunityPill;
 exports.DEFAULT_REGISTRY = DEFAULT_REGISTRY;
 exports.DownloadStat = DownloadStat;
+exports.Field = Field;
 exports.FindAndSharePage = FindAndSharePage;
 exports.Ic = Ic;
 exports.Icons = Icons;
+exports.Modal = Modal;
+exports.ModalFooter = ModalFooter;
+exports.ModalHeader = ModalHeader;
 exports.OfficialPill = OfficialPill;
 exports.PUBLIC_CATEGORIES = PUBLIC_CATEGORIES;
 exports.PUBLIC_FEATURED = PUBLIC_FEATURED;
 exports.PUBLIC_TRENDING = PUBLIC_TRENDING;
 exports.Pill = Pill;
+exports.PublishCollectionModal = PublishCollectionModal;
 exports.REGISTRY_DATA = REGISTRY_DATA;
 exports.REGISTRY_INDEX_CONTENTS_API_URL = REGISTRY_INDEX_CONTENTS_API_URL;
 exports.REGISTRY_INDEX_RAW_URL = REGISTRY_INDEX_RAW_URL;
@@ -2143,11 +3231,14 @@ exports.Row = Row;
 exports.Sidebar = Sidebar;
 exports.Sparkline = Sparkline;
 exports.VerifiedBadge = VerifiedBadge;
+exports.buildRegistryEntry = buildRegistryEntry;
+exports.buildReleaseTag = buildReleaseTag;
 exports.deriveReleaseStats = deriveReleaseStats;
 exports.fetchCollectionReleases = fetchCollectionReleases;
 exports.fetchRegistryIndex = fetchRegistryIndex;
 exports.fmtN = fmtN;
 exports.getRegistryData = getRegistryData;
+exports.inputStyle = inputStyle;
 exports.parseGithubRepo = parseGithubRepo;
 exports.releaseTagPrefix = releaseTagPrefix;
 //# sourceMappingURL=index.js.map

@@ -9,7 +9,7 @@ const NAV_ITEMS = [
   { id: 'browse', label: 'Browse', icon: Icons.Globe },
 ];
 
-export function Sidebar({ active = 'browse', onSelect }) {
+export function Sidebar({ active = 'browse', onSelect, onPublish }) {
   return (
     <aside style={{
       width: 232, flexShrink: 0, height: '100%',
@@ -22,6 +22,17 @@ export function Sidebar({ active = 'browse', onSelect }) {
           <NavItem key={it.id} item={it} active={active === it.id} onClick={() => onSelect && onSelect(it.id)} />
         ))}
       </nav>
+      {onPublish && (
+        <button
+          onClick={onPublish}
+          style={{
+            marginTop: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
+            padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border-1)', cursor: 'pointer',
+            background: '#fff', color: 'var(--fg-base)', fontSize: 13, fontWeight: 500, fontFamily: 'inherit',
+          }}>
+          <Icons.Upload size={14} /> Publish
+        </button>
+      )}
     </aside>
   );
 }

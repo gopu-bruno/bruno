@@ -18,15 +18,19 @@
  * We wrap it in `.oc-registry` so its tokens never leak into the app's theme.
  */
 import React, { useEffect, useState } from 'react';
-import { useDispatch } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 import toast from 'react-hot-toast';
-import { FindAndSharePage, CollectionDetailPage, REGISTRY_INDEX_RAW_URL } from '@usebruno/registry-ui';
+import jsyaml from 'js-yaml';
+import { FindAndSharePage, CollectionDetailPage, PublishCollectionModal, REGISTRY_INDEX_RAW_URL } from '@usebruno/registry-ui';
 import '@usebruno/registry-ui/tokens.css';
 import { hideRegistryPage } from 'providers/ReduxStore/slices/app';
+import { buildOpenCollectionYaml } from 'utils/exporters/opencollection';
 import CloneGitRepository from 'components/Sidebar/CloneGitRespository';
 
 const Registry = () => {
   const dispatch = useDispatch();
+  // Collections open in the workspace — the publish flow picks one to bundle.
+  const collections = useSelector((state) => state.collections.collections);
   // Live data from the git-backed index; null until it resolves (the page falls
   // back to its bundled snapshot meanwhile).
   const [data, setData] = useState(null);
@@ -39,6 +43,8 @@ const Registry = () => {
   // The git ref to clone — the latest published version tag when one exists,
   // so installing gets that version (not whatever HEAD happens to be).
   const [installRef, setInstallRef] = useState(null);
+  // Publish modal.
+  const [showPublish, setShowPublish] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -82,6 +88,59 @@ const Registry = () => {
     setInstallRepoUrl(repo);
   };
 
+  // When a collection is picked in the publish modal, resolve its git remote in
+  // MAIN so we can prefill the source repo + subdir (no manual paste needed).
+  const resolveCollectionMeta = async (c) => {
+    const { ipcRenderer } = window;
+    if (!ipcRenderer || !c?.pathname) return null;
+    try {
+      const info = await ipcRenderer.invoke('renderer:get-collection-git-info', { pathname: c.pathname });
+      if (!info) return null;
+      return { repo: info.remote, subdir: info.subdir, owner: info.owner };
+    } catch (e) {
+      return null;
+    }
+  };
+
+  // Real publish: build a (stub) opencollection.yml from the metadata, then ask
+  // the MAIN process to create the GitHub release + upload the asset (the
+  // renderer can't upload to uploads.github.com — no CORS). Real collection
+  // bundling via exportCollection comes once we wire collection selection.
+  const handlePublishRelease = async ({ meta, entry, tag, name, body, collection }) => {
+    const { ipcRenderer } = window;
+    if (!ipcRenderer) throw new Error('Publishing is only available in the desktop app.');
+    // Bundle the picked collection to a single opencollection.yml. Fall back to
+    // a metadata stub only if no collection was selected.
+    const yaml = collection
+      ? buildOpenCollectionYaml(collection, meta.version)
+      : jsyaml.dump({
+          opencollection: '1.0.0',
+          info: {
+            name: entry.title,
+            version: meta.version,
+            description: entry.tagline,
+            category: entry.category
+          },
+          extensions: { bruno: { publishedVia: 'registry', ns: entry.ns, name: entry.name } }
+        });
+    const res = await ipcRenderer.invoke('renderer:publish-collection', {
+      repo: entry.source.repo,
+      tag,
+      name,
+      body,
+      yaml,
+      pat: meta.pat
+    });
+    return res; // { releaseUrl, assetUrl, tag }
+  };
+
+  // First-time listing: open a PR to collection-registry adding the entry.
+  const handleListCollection = async ({ entry, meta }) => {
+    const { ipcRenderer } = window;
+    if (!ipcRenderer) throw new Error('Listing is only available in the desktop app.');
+    return ipcRenderer.invoke('renderer:open-registry-pr', { entry, pat: meta.pat }); // { prUrl }
+  };
+
   return (
     <div className="oc-registry" style={{ height: '100%', width: '100%', minHeight: 0 }}>
       {view.name === 'detail' ? (
@@ -98,7 +157,18 @@ const Registry = () => {
           })()}
         />
       ) : (
-        <FindAndSharePage onOpenCollection={openCollection} onSearch={handleSearch} registryData={data} />
+        <FindAndSharePage onOpenCollection={openCollection} onSearch={handleSearch} onPublish={() => setShowPublish(true)} registryData={data} />
+      )}
+
+      {showPublish && (
+        <PublishCollectionModal
+          onClose={() => setShowPublish(false)}
+          onPublishRelease={handlePublishRelease}
+          onListCollection={handleListCollection}
+          onResolveCollectionMeta={resolveCollectionMeta}
+          localCollections={collections}
+          registryEntries={data?.all || []}
+        />
       )}
 
       {installRepoUrl && (
