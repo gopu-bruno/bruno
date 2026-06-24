@@ -1,5 +1,6 @@
 const { ipcMain } = require('electron');
 const axios = require('axios');
+const crypto = require('crypto');
 
 // Default registry index location — the rate-limit-free raw CDN URL. Kept in
 // sync with REGISTRY_INDEX_RAW_URL in @usebruno/registry-ui; the renderer passes
@@ -95,6 +96,36 @@ const registerRegistryIpc = (mainWindow) => {
       validateStatus: (status) => status >= 200 && status < 300
     });
     return res.data;
+  });
+
+  // Download a `url`-source version's opencollection artifact. Runs in MAIN to
+  // dodge the renderer CSP/CORS, and (when a hash is given) verifies the bytes
+  // against it — SRI-style "sha256-<base64>" — so a tampered/stale artifact is
+  // rejected before it touches the workspace. Returns the raw YAML text.
+  ipcMain.handle('renderer:fetch-collection-artifact', async (event, { url, hash } = {}) => {
+    if (!url) throw new Error('A url is required to download the collection artifact.');
+    let res;
+    try {
+      res = await axios.get(url, {
+        responseType: 'text',
+        transformResponse: [(d) => d], // keep raw text; don't let axios JSON-parse
+        timeout: 60000,
+        validateStatus: (status) => status >= 200 && status < 300
+      });
+    } catch (err) {
+      const status = err.response && err.response.status;
+      throw new Error(`Couldn't download the artifact${status ? ` (${status})` : ''}: ${url}`);
+    }
+    const text = typeof res.data === 'string' ? res.data : String(res.data);
+
+    if (hash) {
+      const expected = String(hash).replace(/^sha256-/i, '');
+      const actual = crypto.createHash('sha256').update(text, 'utf8').digest('base64');
+      if (actual !== expected) {
+        throw new Error(`Artifact integrity check failed — sha256 mismatch for ${url}. Expected ${expected}, got ${actual}.`);
+      }
+    }
+    return { text, verified: !!hash };
   });
 
   // Publish = open a PR to the registry repo. Two acts, one handler:

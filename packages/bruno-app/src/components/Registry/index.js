@@ -23,6 +23,7 @@
 import React, { useEffect, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import toast from 'react-hot-toast';
+import jsyaml from 'js-yaml';
 import {
   FindAndSharePage,
   CollectionDetailPage,
@@ -35,7 +36,9 @@ import {
 } from '@usebruno/registry-ui';
 import '@usebruno/registry-ui/tokens.css';
 import { hideRegistryPage } from 'providers/ReduxStore/slices/app';
+import { importCollection } from 'providers/ReduxStore/slices/collections/actions';
 import CloneGitRepository from 'components/Sidebar/CloneGitRespository';
+import ImportCollectionLocation from 'components/Sidebar/ImportCollectionLocation';
 
 const Registry = () => {
   const dispatch = useDispatch();
@@ -55,6 +58,9 @@ const Registry = () => {
   // The git ref to clone — the latest version's ref, so installing gets that
   // version (not whatever HEAD happens to be).
   const [installRef, setInstallRef] = useState(null);
+  // For a `url`-source install: the parsed opencollection to drop into the
+  // workspace, fed to the shared ImportCollectionLocation flow (location pick).
+  const [urlImport, setUrlImport] = useState(null);
   // Publish modal.
   const [showPublish, setShowPublish] = useState(false);
 
@@ -111,8 +117,43 @@ const Registry = () => {
       setInstallRepoUrl(g.repo);
       return;
     }
-    // url source — download + import lands next; the artifact is resolved here.
-    toast(`v${v.version} is a URL source — installing from a hosted artifact lands next.\n${v.source?.url || ''}`);
+    installFromUrl(c, v);
+  };
+
+  // url source — download the opencollection artifact in MAIN (verifying its
+  // hash when present), parse it, and hand it to the shared import-location
+  // flow so the user picks where it lands, then it's written as a collection.
+  const installFromUrl = async (c, v) => {
+    const url = v.source?.url;
+    if (!url) {
+      toast.error(`Version ${v.version} of ${c?.ns}/${c?.name} has no url.`);
+      return;
+    }
+    const { ipcRenderer } = window;
+    if (!ipcRenderer) {
+      toast.error('Installing from a URL is only available in the desktop app.');
+      return;
+    }
+    const id = toast.loading(`Downloading ${c.ns}/${c.name} v${v.version}…`);
+    try {
+      const { text, verified } = await ipcRenderer.invoke('renderer:fetch-collection-artifact', { url, hash: v.hash });
+      const parsed = jsyaml.load(text);
+      if (!parsed || typeof parsed !== 'object') throw new Error('The artifact is not a valid opencollection.yml.');
+      toast.success(verified ? 'Downloaded — hash verified.' : 'Downloaded.', { id });
+      setUrlImport({ rawData: parsed });
+    } catch (e) {
+      toast.error((e && e.message) || 'Failed to download the collection artifact.', { id });
+    }
+  };
+
+  // The import-location flow resolved a destination — write the collection in.
+  const handleUrlImportSubmit = (convertedCollection, collectionLocation, options = {}) => {
+    dispatch(importCollection(convertedCollection, collectionLocation, options))
+      .then(() => {
+        setUrlImport(null);
+        dispatch(hideRegistryPage());
+      })
+      .catch((err) => toast.error((err && err.message) || 'Import failed.'));
   };
 
   // Latest version label + a truthful install command for the detail page.
@@ -191,6 +232,15 @@ const Registry = () => {
             setInstallRef(null);
             dispatch(hideRegistryPage());
           }}
+        />
+      )}
+
+      {urlImport && (
+        <ImportCollectionLocation
+          rawData={urlImport.rawData}
+          format="opencollection"
+          onClose={() => setUrlImport(null)}
+          handleSubmit={handleUrlImportSubmit}
         />
       )}
     </div>
