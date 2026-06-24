@@ -273,12 +273,12 @@ export function CollectionCard({ c, onOpen, compact }) {
             padding: '2px 7px', borderRadius: 4, fontFamily: 'var(--font-mono)',
           }}>{l}</span>
         ))}
-        {c.downloads != null && (
+        {c.installs != null && (
           <span style={{
             marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 4,
             fontSize: 11, color: 'var(--fg-subtext-1)',
           }}>
-            <Icons.Download size={11} /> {fmtN(c.downloads)}
+            <Icons.Download size={11} /> {fmtN(c.installs)}
           </span>
         )}
       </div>

@@ -58,12 +58,12 @@ export function getRegistryData(registry) {
 
 // raw CDN — no rate limit (hammer refresh freely in dev), ~5-min cache.
 export const REGISTRY_INDEX_RAW_URL =
-  'https://raw.githubusercontent.com/gopu-bruno/collection-registry/main/index.json';
+  'https://raw.githubusercontent.com/gopu-bruno/registry-hybrid/main/index.json';
 
 // GitHub contents API — reflects a just-merged PR immediately, but rate-limited
 // to 60 req/hr unauthenticated.
 export const REGISTRY_INDEX_CONTENTS_API_URL =
-  'https://api.github.com/repos/gopu-bruno/collection-registry/contents/index.json';
+  'https://api.github.com/repos/gopu-bruno/registry-hybrid/contents/index.json';
 
 // Website index source — toggle by commenting/uncommenting (only ONE active).
 // VITE_REGISTRY_INDEX_URL overrides either when set.
@@ -84,168 +84,177 @@ export async function fetchRegistryIndex(url = REGISTRY_INDEX_URL) {
   return res.json();
 }
 
-// --- Live release stats (GitHub Releases) -----------------------------------
-// The index already carries CI-baked usage stats (version/downloads/releases),
-// but a collection's detail page re-fetches them straight from GitHub so the
-// install count is current. Same model as the build pipeline: a version is a
-// git tag, the install count is the sum of asset downloads, and several
-// collections in one repo are told apart by a tag prefix.
-const RELEASE_ASSET_RE = /opencollection.*\.ya?ml$/i;
+// --- Versions & sources -----------------------------------------------------
+// A registry entry carries a `versions` array; each version is independently
+// sourced (git or url). The index build bakes in `latestVersion`, but we
+// recompute defensively here so the UI also works on un-baked / fallback data.
 
 export function parseGithubRepo(url) {
   const m = String(url || '').match(/github\.com[/:]([^/]+)\/([^/.\s]+)/i);
   return m ? { owner: m[1], repo: m[2].replace(/\.git$/, '') } : null;
 }
 
-// Build the release tag for a (source, version) pair — mirror of the publish
-// convention: "<subdir>@<version>" in a shared repo, else "v<version>".
-export function buildReleaseTag(source, version) {
-  const v = String(version || '').trim() || '0.0.0';
-  const s = source || {};
-  if (s.tagPrefix) return `${s.tagPrefix}${v}`;
-  if (s.subdir && s.subdir !== '.') return `${s.subdir}@${v}`;
-  return `v${v}`;
+// Compare two versions by semver precedence. Core (major.minor.patch) compares
+// numerically; a prerelease (e.g. 1.0.0-beta) ranks BELOW its release; prerelease
+// identifiers compare dot-wise. Returns >0 if a is newer. Mirrors cmpVersion in
+// the registry's build-index.mjs — keep the two in sync.
+export function cmpVersion(a, b) {
+  const parse = (v) => {
+    const core = String(v == null ? '' : v).trim().replace(/^v/, '').split('+')[0];
+    const [main, pre] = core.split('-');
+    const nums = main.split('.').map((n) => (/^\d+$/.test(n) ? Number(n) : 0));
+    while (nums.length < 3) nums.push(0);
+    return { nums, pre: pre || null };
+  };
+  const pa = parse(a), pb = parse(b);
+  for (let i = 0; i < 3; i++) if (pa.nums[i] !== pb.nums[i]) return pa.nums[i] - pb.nums[i];
+  if (!pa.pre && !pb.pre) return 0;
+  if (!pa.pre) return 1;   // release outranks prerelease
+  if (!pb.pre) return -1;
+  const ai = pa.pre.split('.'), bi = pb.pre.split('.');
+  for (let i = 0; i < Math.max(ai.length, bi.length); i++) {
+    const x = ai[i], y = bi[i];
+    if (x === undefined) return -1;
+    if (y === undefined) return 1;
+    const xn = /^\d+$/.test(x), yn = /^\d+$/.test(y);
+    if (xn && yn) { if (Number(x) !== Number(y)) return Number(x) - Number(y); }
+    else if (x !== y) return x > y ? 1 : -1;
+  }
+  return 0;
 }
 
-// Build the registry entry (collections/<ns>/<name>.json) from collected
-// publish metadata. Only authored fields — usage stats stay derived.
+// A collection's versions, newest-first.
+export function sortedVersions(collection) {
+  return [...((collection && collection.versions) || [])].sort((a, b) => cmpVersion(b.version, a.version));
+}
+
+// The newest version object (honoring a baked `latestVersion` if present), or null.
+export function latestVersionEntry(collection) {
+  if (!collection) return null;
+  if (collection.latestVersion) {
+    const hit = (collection.versions || []).find((v) => v.version === collection.latestVersion);
+    if (hit) return hit;
+  }
+  return sortedVersions(collection)[0] || null;
+}
+
+export function latestVersionLabel(collection) {
+  return (collection && collection.latestVersion) || (latestVersionEntry(collection) || {}).version || null;
+}
+
+// Resolve a version's git source ({ repo, ref, subdir }) — null for non-git
+// versions or when no repo is set.
+export function gitSourceOf(versionEntry) {
+  if (!versionEntry || versionEntry.type !== 'git') return null;
+  const s = versionEntry.source || {};
+  if (!s.repo) return null;
+  return { repo: s.repo, ref: s.ref || null, subdir: s.subdir && s.subdir !== '.' ? s.subdir : null };
+}
+
+// Build one version object from the publish form.
+export function buildVersionEntry(meta) {
+  const m = meta || {};
+  const type = m.type === 'url' ? 'url' : 'git';
+  const v = { version: (m.version || '').trim() || '1.0.0', type };
+  if (type === 'git') {
+    const source = { repo: (m.repo || '').trim() };
+    const ref = (m.ref || '').trim();
+    const subdir = (m.subdir || '').trim();
+    if (ref) source.ref = ref;
+    if (subdir && subdir !== '.') source.subdir = subdir;
+    v.source = source;
+  } else {
+    v.source = { url: (m.url || '').trim() };
+  }
+  if ((m.hash || '').trim()) v.hash = m.hash.trim();
+  return v;
+}
+
+// Build the registry entry (collection/<letter>/<ns>/<name>.json) from collected
+// publish metadata. Only what the publisher authors — editorial flags are added
+// by maintainers during review, and install counts come from a separate API.
 export function buildRegistryEntry(meta) {
   const m = meta || {};
   const langs = (m.langs || '')
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean);
-  const source = { type: 'git', repo: (m.repo || '').trim(), ref: (m.ref || 'main').trim() };
-  const subdir = (m.subdir || '').trim();
-  if (subdir && subdir !== '.') source.subdir = subdir;
   const entry = {
     ns: (m.ns || '').trim(),
     name: (m.name || '').trim(),
     title: (m.title || '').trim(),
-    tagline: (m.tagline || '').trim(),
     category: m.category || 'devops',
-    verified: false,
-    official: false,
-    featured: false,
-    trending: false,
-    source,
   };
+  if ((m.tagline || '').trim()) entry.tagline = m.tagline.trim();
   if (langs.length) entry.langs = langs;
   if ((m.color || '').trim()) entry.color = m.color.trim();
+  entry.versions = [buildVersionEntry(m)];
   return entry;
 }
 
-export function releaseTagPrefix(collection) {
-  const s = (collection && collection.source) || {};
-  if (s.tagPrefix) return s.tagPrefix;
-  if (s.subdir && s.subdir !== '.') return `${s.subdir}@`;
-  return null; // whole-repo: every release belongs to this collection
+// Path of an entry's file within the registry repo (sharded by ns's first char).
+export function registryEntryPath(entry) {
+  const ns = (entry && entry.ns) || '';
+  const name = (entry && entry.name) || '';
+  return `collection/${ns[0] || '_'}/${ns}/${name}.json`;
 }
 
-function stripTagPrefix(tag, prefix) {
-  if (prefix && tag.startsWith(prefix)) return tag.slice(prefix.length);
-  return String(tag).replace(/^v/, '');
-}
+// --- Presentation, derived client-side --------------------------------------
+// The index is a pure catalog ({ collections, totalCollections, publishers }).
+// featured / trending / categories are NOT baked into it — they're derived here
+// from the flags/category on each entry, so the data contract isn't coupled to
+// any one homepage and entries aren't duplicated.
+export const CATEGORY_META = {
+  payments:     { label: 'Payments',         icon: 'card' },
+  ai:           { label: 'AI & ML',          icon: 'sparkle' },
+  auth:         { label: 'Auth & Identity',  icon: 'key' },
+  devops:       { label: 'DevOps & Infra',   icon: 'server' },
+  comms:        { label: 'Communications',   icon: 'message' },
+  data:         { label: 'Data & Analytics', icon: 'chart' },
+  storage:      { label: 'Storage & CDN',    icon: 'box' },
+  productivity: { label: 'Productivity',     icon: 'layout' },
+};
 
-function assetDownloads(release) {
-  return (release.assets || []).reduce((s, a) => s + (a.download_count || 0), 0);
-}
-
-function pickAsset(release) {
-  const assets = release.assets || [];
-  return assets.find((a) => RELEASE_ASSET_RE.test(a.name)) || assets[0] || null;
-}
-
-// Reduce raw GitHub releases to one collection's stats (shape matches the index).
-export function deriveReleaseStats(releases, collection) {
-  const prefix = releaseTagPrefix(collection);
-  const mine = (releases || []).filter((r) => (prefix ? (r.tag_name || '').startsWith(prefix) : true));
-  const sorted = mine.slice().sort((a, b) => new Date(b.published_at || 0) - new Date(a.published_at || 0));
-  const latest = sorted.find((r) => !r.prerelease) || sorted[0] || null;
-  const latestAsset = latest ? pickAsset(latest) : null;
+// Shape the find page expects, derived from a fetched index. Accepts the pure
+// catalog ({ collections }) and, defensively, an older { all } index — returns
+// null for an empty/missing index so the host can fall back to its snapshot.
+export function deriveHome(index) {
+  const collections = (index && (index.collections || index.all)) || [];
+  if (!collections.length) return null;
+  const sorted = [...collections].sort((a, b) => a.title.localeCompare(b.title));
+  const featured = sorted.filter((c) => c.featured).slice(0, 3);
+  const trending = sorted.filter((c) => c.trending && !c.featured);
+  const counts = {};
+  for (const c of collections) counts[c.category] = (counts[c.category] || 0) + 1;
+  const categories = Object.entries(CATEGORY_META)
+    .map(([id, meta]) => ({ id, label: meta.label, icon: meta.icon, count: counts[id] || 0 }))
+    .filter((c) => c.count > 0);
   return {
-    version: latest ? stripTagPrefix(latest.tag_name, prefix) : null,
-    downloads: mine.reduce((s, r) => s + assetDownloads(r), 0),
-    releaseCount: mine.length,
-    latestAssetUrl: latestAsset ? latestAsset.browser_download_url : null,
-    releases: sorted.slice(0, 20).map((r) => {
-      const asset = pickAsset(r);
-      return {
-        version: stripTagPrefix(r.tag_name, prefix),
-        tag: r.tag_name,
-        publishedAt: r.published_at,
-        downloads: assetDownloads(r),
-        prerelease: !!r.prerelease,
-        notes: (r.body || '').split('\n').find((l) => l.trim()) || '',
-        assetUrl: asset ? asset.browser_download_url : null,
-      };
-    }),
+    featured,
+    trending,
+    categories,
+    all: sorted,
+    totalCollections: index.totalCollections != null ? index.totalCollections : collections.length,
+    publishers: index.publishers != null ? index.publishers : new Set(collections.map((c) => c.ns)).size,
   };
 }
 
-// The browser fetch below is UNAUTHENTICATED (a token can't be shipped to the
-// client safely), so it's bound by GitHub's 60 req/hr-per-IP limit. To stay
-// well under it we (a) only fetch on the detail page — never per card,
-// (b) cache per session with a TTL so revisits are free, and (c) degrade
-// silently to the CI-baked index stats on rate-limit/error rather than throw.
-// The baked index.json (refreshed hourly by CI) is always the floor.
-const RELEASE_TTL_MS = 10 * 60 * 1000; // 10 min
-const _releaseMem = new Map(); // slug -> { at, stats }
+// --- Install counts (separate public API) -----------------------------------
+// The registry stores NO usage stats — counts come from a public API keyed by
+// ns/name, configured via VITE_REGISTRY_STATS_URL. Returns null when the API
+// is unconfigured or any call fails, so the UI hides the stat until it's live.
+export const REGISTRY_STATS_URL = (import.meta.env && import.meta.env.VITE_REGISTRY_STATS_URL) || '';
 
-function readReleaseCache(slug) {
-  const m = _releaseMem.get(slug);
-  if (m && Date.now() - m.at < RELEASE_TTL_MS) return m.stats;
+export async function fetchInstallCount(ns, name) {
+  if (!REGISTRY_STATS_URL || !ns || !name) return null;
   try {
-    if (typeof sessionStorage !== 'undefined') {
-      const raw = sessionStorage.getItem('oc-rel:' + slug);
-      if (raw) {
-        const o = JSON.parse(raw);
-        if (Date.now() - o.at < RELEASE_TTL_MS) return o.stats;
-      }
-    }
-  } catch { /* sessionStorage unavailable/full — ignore */ }
-  return undefined;
-}
-
-function writeReleaseCache(slug, stats) {
-  const rec = { at: Date.now(), stats };
-  _releaseMem.set(slug, rec);
-  try {
-    if (typeof sessionStorage !== 'undefined') sessionStorage.setItem('oc-rel:' + slug, JSON.stringify(rec));
-  } catch { /* ignore quota/availability */ }
-}
-
-// Fetch a collection's live release stats from GitHub. Returns null when the
-// repo can't be parsed OR when the live call fails / is rate-limited (the
-// caller then keeps the index-baked stats); zero-stats if the repo has no
-// releases. Pass { force: true } to bypass the session cache (e.g. a Refresh).
-export async function fetchCollectionReleases(collection, { force = false } = {}) {
-  const parsed = parseGithubRepo(collection && collection.source && collection.source.repo);
-  if (!parsed) return null;
-  const slug = `${collection.ns}/${collection.name}`;
-  if (!force) {
-    const cached = readReleaseCache(slug);
-    if (cached !== undefined) return cached;
-  }
-
-  let res;
-  try {
-    res = await fetch(`https://api.github.com/repos/${parsed.owner}/${parsed.repo}/releases?per_page=100`, {
-      cache: 'no-store',
-      headers: { Accept: 'application/vnd.github+json' },
-    });
+    const res = await fetch(`${REGISTRY_STATS_URL.replace(/\/$/, '')}/installs/${ns}/${name}`, { cache: 'no-store' });
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (typeof data.installs === 'number') return data.installs;
+    if (typeof data.count === 'number') return data.count;
+    return null;
   } catch {
-    return null; // network error — fall back to baked stats
+    return null; // API down / unreachable — caller hides the stat
   }
-  if (res.status === 403 || res.status === 429) return null; // rate-limited — degrade silently
-  if (res.status === 404) {
-    const zero = deriveReleaseStats([], collection);
-    writeReleaseCache(slug, zero);
-    return zero;
-  }
-  if (!res.ok) return null;
-  const releases = (await res.json()).filter((r) => !r.draft);
-  const stats = deriveReleaseStats(releases, collection);
-  writeReleaseCache(slug, stats);
-  return stats;
 }

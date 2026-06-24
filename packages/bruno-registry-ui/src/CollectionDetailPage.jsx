@@ -7,18 +7,12 @@
 // at install time, so we don't fabricate a request list here.
 import React, { useState } from 'react';
 import { Icons } from './icons.jsx';
-import { VerifiedBadge, OfficialPill, Btn, DownloadStat, fmtN } from './primitives.jsx';
+import { VerifiedBadge, OfficialPill, Btn, DownloadStat } from './primitives.jsx';
+import { sortedVersions, latestVersionEntry, latestVersionLabel, gitSourceOf } from './registryData.js';
 
 const CATEGORY_LABELS = {
   payments: 'Payments', ai: 'AI & ML', auth: 'Auth & Identity', devops: 'DevOps & Infra',
   comms: 'Communications', data: 'Data & Analytics', storage: 'Storage & CDN', productivity: 'Productivity',
-};
-
-const fmtDate = (iso) => {
-  if (!iso) return '';
-  const d = new Date(iso);
-  if (isNaN(d)) return '';
-  return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
 };
 
 export function CollectionDetailPage({
@@ -26,22 +20,31 @@ export function CollectionDetailPage({
   onBack,
   onInstall,
   // Host-specific install affordances. The desktop app clones the source repo
-  // into the workspace, so it passes a truthful `git clone …` command and a
-  // clone-explicit label; the website keeps its own defaults.
+  // (or downloads the url artifact) into the workspace, so it passes a truthful
+  // command and label; the website keeps its own defaults.
   installLabel = 'Add to Bruno',
-  installCommand
+  installCommand,
+  // Install count from the separate public API; null/undefined hides the stat.
+  installCount
 }) {
   if (!collection) return null;
   const c = collection;
   const slug = `${c.ns}/${c.name}`;
-  const source = c.source || {};
-  const repo = source.repo;
-  // The collection lives in its own subdir of the source repo — link there, not
-  // at the repo root, so "View source" shows this collection, not all of them.
-  const subdir = source.subdir && source.subdir !== '.' ? source.subdir : '';
-  const ref = source.ref || 'main';
-  const sourceUrl = repo ? (subdir ? `${repo}/tree/${ref}/${subdir}` : repo) : null;
-  const sourceLabel = repo ? `${repo.replace(/^https?:\/\//, '')}${subdir ? '/' + subdir : ''}` : '';
+  const versions = sortedVersions(c);
+  const latest = latestVersionEntry(c);
+  const latestLabel = latestVersionLabel(c);
+  // Resolve the latest version's source. For git we can link to the repo (at the
+  // subdir/ref); for url we link to the artifact directly.
+  const git = gitSourceOf(latest);
+  const repo = git && git.repo;
+  const subdir = git && git.subdir ? git.subdir : '';
+  const ref = (git && git.ref) || 'main';
+  const sourceUrl = repo
+    ? (subdir ? `${repo}/tree/${ref}/${subdir}` : repo)
+    : (latest && latest.type === 'url' ? (latest.source && latest.source.url) : null);
+  const sourceLabel = repo
+    ? `${repo.replace(/^https?:\/\//, '')}${subdir ? '/' + subdir : ''}`
+    : (latest && latest.type === 'url' ? (latest.source && latest.source.url) : '');
   const installCmd = installCommand || `bruno install ${slug}`;
 
   return (
@@ -83,23 +86,18 @@ export function CollectionDetailPage({
                 }}>{l}</span>
               ))}
             </div>
-            {(c.downloads != null || c.version || c.updated) && (
+            {(installCount != null || latestLabel || versions.length > 0) && (
               <div style={{ display: 'flex', gap: 22, flexWrap: 'wrap', alignItems: 'center', marginTop: 16, fontSize: 12.5, color: 'var(--fg-subtext-1)' }}>
-                {c.downloads != null && <DownloadStat value={c.downloads} label="installs" />}
-                {c.version && (
+                {installCount != null && <DownloadStat value={installCount} label="installs" />}
+                {latestLabel && (
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                     <Icons.GitBranch size={13} />
-                    <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--fg-base)' }}>v{c.version}</span>
+                    <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--fg-base)' }}>v{latestLabel}</span>
                   </span>
                 )}
-                {c.releaseCount > 0 && (
+                {versions.length > 0 && (
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                    <Icons.GitCommit size={13} /> {c.releaseCount} {c.releaseCount === 1 ? 'release' : 'releases'}
-                  </span>
-                )}
-                {c.updated && (
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                    <Icons.Clock size={13} /> Updated {c.updated}
+                    <Icons.GitCommit size={13} /> {versions.length} {versions.length === 1 ? 'version' : 'versions'}
                   </span>
                 )}
               </div>
@@ -126,46 +124,53 @@ export function CollectionDetailPage({
           <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 12 }}>Install</h3>
           <InstallCommand command={installCmd} />
           <p style={{ fontSize: 12.5, color: 'var(--fg-subtext-1)', lineHeight: 1.55, marginTop: 14 }}>
-            Requests are fetched from the source repository at install time and written into your workspace as
-            native <span style={{ fontFamily: 'var(--font-mono)' }}>.bru</span> files. Nothing runs on install.
+            The collection is fetched from the selected version's source at install time and written into your
+            workspace as native <span style={{ fontFamily: 'var(--font-mono)' }}>.bru</span> files. Nothing runs on install.
           </p>
 
-          {/* Versions = git tags with a published release. Download count is the
-              sum of the release's asset downloads, read live from GitHub. */}
-          {c.releases && c.releases.length > 0 ? (
+          {/* Versions are authored in the registry entry — each independently
+              sourced from a git repo or a hosted url. Latest is by semver. */}
+          {versions.length > 0 ? (
             <div style={{ marginTop: 32 }}>
               <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 12 }}>
-                Versions <span style={{ color: 'var(--fg-subtext-1)', fontWeight: 400 }}>({c.releaseCount})</span>
+                Versions <span style={{ color: 'var(--fg-subtext-1)', fontWeight: 400 }}>({versions.length})</span>
               </h3>
               <div style={{ border: '1px solid var(--border-1)', borderRadius: 8, background: '#fff', overflow: 'hidden' }}>
-                {c.releases.map((r, i) => (
-                  <div key={r.tag} style={{
-                    display: 'flex', gap: 14, alignItems: 'center', padding: '12px 16px',
-                    borderBottom: i === c.releases.length - 1 ? 'none' : '1px solid var(--border-1)',
-                  }}>
-                    <div style={{ minWidth: 110 }}>
-                      <div style={{ fontFamily: 'var(--font-mono)', fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
-                        v{r.version}
-                        {i === 0 && !r.prerelease && <span style={{ fontSize: 9.5, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--success)', background: 'var(--success-bg)', padding: '1px 5px', borderRadius: 4 }}>Latest</span>}
-                        {r.prerelease && <span style={{ fontSize: 9.5, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--fg-subtext-1)', background: 'var(--bg-surface-0)', padding: '1px 5px', borderRadius: 4 }}>Pre</span>}
+                {versions.map((v, i) => {
+                  const g = gitSourceOf(v);
+                  const where = g
+                    ? `${g.repo.replace(/^https?:\/\//, '')}${g.subdir ? '/' + g.subdir : ''}${g.ref ? ' @ ' + g.ref : ''}`
+                    : (v.source && v.source.url) || '';
+                  return (
+                    <div key={v.version} style={{
+                      display: 'flex', gap: 14, alignItems: 'center', padding: '12px 16px',
+                      borderBottom: i === versions.length - 1 ? 'none' : '1px solid var(--border-1)',
+                    }}>
+                      <div style={{ minWidth: 110 }}>
+                        <div style={{ fontFamily: 'var(--font-mono)', fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
+                          v{v.version}
+                          {i === 0 && <span style={{ fontSize: 9.5, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--success)', background: 'var(--success-bg)', padding: '1px 5px', borderRadius: 4 }}>Latest</span>}
+                        </div>
+                        <div style={{ fontSize: 10, color: 'var(--fg-subtext-1)', marginTop: 3, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{v.type}</div>
                       </div>
-                      <div style={{ fontSize: 11, color: 'var(--fg-subtext-1)', marginTop: 2 }}>{fmtDate(r.publishedAt)}</div>
+                      <div style={{ flex: 1, minWidth: 0, fontSize: 12, fontFamily: 'var(--font-mono)', color: 'var(--fg-subtext-2)', lineHeight: 1.45, wordBreak: 'break-all' }}>
+                        {where}
+                      </div>
+                      {v.hash && (
+                        <span title={v.hash} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5, color: 'var(--fg-subtext-1)', flexShrink: 0 }}>
+                          <Icons.Check size={12} /> hash
+                        </span>
+                      )}
                     </div>
-                    <div style={{ flex: 1, minWidth: 0, fontSize: 12.5, color: 'var(--fg-subtext-2)', lineHeight: 1.45, textWrap: 'pretty' }}>
-                      {r.notes || <span style={{ color: 'var(--fg-subtext-0)' }}>No release notes</span>}
-                    </div>
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'var(--fg-subtext-1)', flexShrink: 0 }}>
-                      <Icons.Download size={12} /> {fmtN(r.downloads)}
-                    </span>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           ) : (
             <div style={{ marginTop: 32, padding: '20px', border: '1px dashed var(--border-1)', borderRadius: 8, background: 'var(--bg-mantle)', fontSize: 12.5, color: 'var(--fg-subtext-1)', lineHeight: 1.55 }}>
-              <strong style={{ color: 'var(--fg-base)', fontWeight: 600 }}>No released versions yet.</strong> Once a release is
-              published on the source repo (a git tag carrying an <span style={{ fontFamily: 'var(--font-mono)' }}>opencollection.yml</span> asset),
-              its versions and install counts appear here automatically.
+              <strong style={{ color: 'var(--fg-base)', fontWeight: 600 }}>No versions listed yet.</strong> A version is added via a PR
+              to the registry — a <span style={{ fontFamily: 'var(--font-mono)' }}>git</span> or <span style={{ fontFamily: 'var(--font-mono)' }}>url</span> source for the
+              collection's <span style={{ fontFamily: 'var(--font-mono)' }}>opencollection.yml</span>.
             </div>
           )}
         </div>
@@ -174,7 +179,7 @@ export function CollectionDetailPage({
           <h3 style={{ fontSize: 13, fontWeight: 600, marginBottom: 12 }}>Details</h3>
           <dl style={{ display: 'grid', gap: 12, margin: 0 }}>
             <Detail label="Publisher" value={c.ns} />
-            {c.version && <Detail label="Latest version" value={<span style={{ fontFamily: 'var(--font-mono)' }}>v{c.version}</span>} />}
+            {latestLabel && <Detail label="Latest version" value={<span style={{ fontFamily: 'var(--font-mono)' }}>v{latestLabel}</span>} />}
             {c.category && <Detail label="Category" value={CATEGORY_LABELS[c.category] || c.category} />}
             {c.langs && c.langs.length > 0 && <Detail label="Languages" value={c.langs.join(', ')} />}
             {sourceUrl && (

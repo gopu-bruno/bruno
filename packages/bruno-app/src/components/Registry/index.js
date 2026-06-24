@@ -11,37 +11,49 @@
  *   - Index fetch runs in the Electron MAIN process against the raw CDN URL
  *     (renderer CSP blocks external fetch; raw has no rate limit). See the
  *     `renderer:fetch-registry-index` IPC.
- *   - Install = git CLONE the collection's source repo into the workspace,
- *     reusing the existing CloneGitRepository flow (clone → scan → open).
- *
- * The shared UI is host-agnostic (pure React + inline styles + scoped CSS vars).
- * We wrap it in `.oc-registry` so its tokens never leak into the app's theme.
+ *   - Install resolves the collection's LATEST version and its source:
+ *       • git → CLONE the repo at the version's ref/subdir into the workspace
+ *         (reusing the existing CloneGitRepository flow).
+ *       • url → download the hosted opencollection.yml artifact (in progress).
+ *   - Install counts come from a separate public API (fetchInstallCount); the
+ *     stat is hidden until that API is configured/live.
+ *   - Publish = open a PR to the registry that lists the collection or appends a
+ *     version (renderer:open-registry-pr). There is no GitHub Release step.
  */
 import React, { useEffect, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import toast from 'react-hot-toast';
-import jsyaml from 'js-yaml';
-import { FindAndSharePage, CollectionDetailPage, PublishCollectionModal, REGISTRY_INDEX_RAW_URL } from '@usebruno/registry-ui';
+import {
+  FindAndSharePage,
+  CollectionDetailPage,
+  PublishCollectionModal,
+  REGISTRY_INDEX_RAW_URL,
+  latestVersionEntry,
+  gitSourceOf,
+  fetchInstallCount,
+  deriveHome
+} from '@usebruno/registry-ui';
 import '@usebruno/registry-ui/tokens.css';
 import { hideRegistryPage } from 'providers/ReduxStore/slices/app';
-import { buildOpenCollectionYaml } from 'utils/exporters/opencollection';
 import CloneGitRepository from 'components/Sidebar/CloneGitRespository';
 
 const Registry = () => {
   const dispatch = useDispatch();
-  // Collections open in the workspace — the publish flow picks one to bundle.
+  // Collections open in the workspace — the publish flow picks one.
   const collections = useSelector((state) => state.collections.collections);
   // Live data from the git-backed index; null until it resolves (the page falls
   // back to its bundled snapshot meanwhile).
   const [data, setData] = useState(null);
   // Local browse <-> detail routing inside the takeover.
   const [view, setView] = useState({ name: 'browse' });
+  // Install count for the open collection (from the public API), or null.
+  const [installCount, setInstallCount] = useState(null);
   // When set, the clone-into-workspace modal opens, pre-filled with this repo.
   const [installRepoUrl, setInstallRepoUrl] = useState(null);
   // The collection's subdir within that repo, so the clone scopes to just it.
   const [installSubdir, setInstallSubdir] = useState(null);
-  // The git ref to clone — the latest published version tag when one exists,
-  // so installing gets that version (not whatever HEAD happens to be).
+  // The git ref to clone — the latest version's ref, so installing gets that
+  // version (not whatever HEAD happens to be).
   const [installRef, setInstallRef] = useState(null);
   // Publish modal.
   const [showPublish, setShowPublish] = useState(false);
@@ -60,6 +72,19 @@ const Registry = () => {
     };
   }, []);
 
+  // Fetch the install count whenever a detail page opens (hidden if unavailable).
+  useEffect(() => {
+    if (view.name !== 'detail') return undefined;
+    let alive = true;
+    setInstallCount(null);
+    fetchInstallCount(view.collection.ns, view.collection.name)
+      .then((n) => alive && setInstallCount(n))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [view]);
+
   const openCollection = (c) => setView({ name: 'detail', collection: c });
   const goBrowse = () => setView({ name: 'browse' });
 
@@ -68,24 +93,38 @@ const Registry = () => {
     console.log('[registry] search', { q, filters });
   };
 
-  // Install = clone the collection's source git repo into the workspace. We open
-  // the existing CloneGitRepository flow pre-filled with the repo URL, reusing
-  // its location picker, progress, scan and open-into-workspace logic.
-  // Latest published version tag for a collection (from the baked/live release
-  // stats), e.g. "stripe-stripe-api@1.0.0". Null when the collection has no
-  // releases yet — then we fall back to source.ref (the default branch).
-  const latestReleaseTag = (c) => (c && c.releases && c.releases[0] && c.releases[0].tag) || null;
-  const installRefFor = (c) => latestReleaseTag(c) || (c && c.source && c.source.ref) || null;
-
+  // Install = resolve the latest version's source and bring it into the workspace.
   const handleInstall = (c) => {
-    const repo = c?.source?.repo;
-    if (!repo) {
-      toast.error(`No source repository listed for ${c?.ns}/${c?.name}`);
+    const v = latestVersionEntry(c);
+    if (!v) {
+      toast.error(`No versions listed for ${c?.ns}/${c?.name}`);
       return;
     }
-    setInstallSubdir(c?.source?.subdir || null);
-    setInstallRef(installRefFor(c));
-    setInstallRepoUrl(repo);
+    if (v.type === 'git') {
+      const g = gitSourceOf(v);
+      if (!g) {
+        toast.error(`Version ${v.version} of ${c?.ns}/${c?.name} has no git repo.`);
+        return;
+      }
+      setInstallSubdir(g.subdir || null);
+      setInstallRef(g.ref || null);
+      setInstallRepoUrl(g.repo);
+      return;
+    }
+    // url source — download + import lands next; the artifact is resolved here.
+    toast(`v${v.version} is a URL source — installing from a hosted artifact lands next.\n${v.source?.url || ''}`);
+  };
+
+  // Latest version label + a truthful install command for the detail page.
+  const installCommandFor = (c) => {
+    const v = latestVersionEntry(c);
+    if (!v) return undefined;
+    if (v.type === 'git') {
+      const g = gitSourceOf(v);
+      if (!g) return undefined;
+      return g.ref ? `git clone --branch ${g.ref} ${g.repo}` : `git clone ${g.repo}`;
+    }
+    return `curl -L ${v.source?.url || '<artifact-url>'} -o opencollection.yml`;
   };
 
   // When a collection is picked in the publish modal, resolve its git remote in
@@ -102,43 +141,12 @@ const Registry = () => {
     }
   };
 
-  // Real publish: build a (stub) opencollection.yml from the metadata, then ask
-  // the MAIN process to create the GitHub release + upload the asset (the
-  // renderer can't upload to uploads.github.com — no CORS). Real collection
-  // bundling via exportCollection comes once we wire collection selection.
-  const handlePublishRelease = async ({ meta, entry, tag, name, body, collection }) => {
+  // Publish = open a PR to the registry repo. Lists a new collection, or
+  // appends a version to an already-listed one. The maintainer reviews/merges.
+  const handleOpenRegistryPr = async ({ entry, version, alreadyListed, meta }) => {
     const { ipcRenderer } = window;
     if (!ipcRenderer) throw new Error('Publishing is only available in the desktop app.');
-    // Bundle the picked collection to a single opencollection.yml. Fall back to
-    // a metadata stub only if no collection was selected.
-    const yaml = collection
-      ? buildOpenCollectionYaml(collection, meta.version)
-      : jsyaml.dump({
-          opencollection: '1.0.0',
-          info: {
-            name: entry.title,
-            version: meta.version,
-            description: entry.tagline,
-            category: entry.category
-          },
-          extensions: { bruno: { publishedVia: 'registry', ns: entry.ns, name: entry.name } }
-        });
-    const res = await ipcRenderer.invoke('renderer:publish-collection', {
-      repo: entry.source.repo,
-      tag,
-      name,
-      body,
-      yaml,
-      pat: meta.pat
-    });
-    return res; // { releaseUrl, assetUrl, tag }
-  };
-
-  // First-time listing: open a PR to collection-registry adding the entry.
-  const handleListCollection = async ({ entry, meta }) => {
-    const { ipcRenderer } = window;
-    if (!ipcRenderer) throw new Error('Listing is only available in the desktop app.');
-    return ipcRenderer.invoke('renderer:open-registry-pr', { entry, pat: meta.pat }); // { prUrl }
+    return ipcRenderer.invoke('renderer:open-registry-pr', { entry, version, alreadyListed, pat: meta.pat });
   };
 
   return (
@@ -148,26 +156,21 @@ const Registry = () => {
           collection={view.collection}
           onBack={goBrowse}
           onInstall={() => handleInstall(view.collection)}
-          installLabel="Clone & add"
-          installCommand={(() => {
-            const repo = view.collection?.source?.repo;
-            if (!repo) return undefined;
-            const tag = latestReleaseTag(view.collection);
-            return tag ? `git clone --branch ${tag} ${repo}` : `git clone ${repo}`;
-          })()}
+          installLabel="Add to Bruno"
+          installCommand={installCommandFor(view.collection)}
+          installCount={installCount}
         />
       ) : (
-        <FindAndSharePage onOpenCollection={openCollection} onSearch={handleSearch} onPublish={() => setShowPublish(true)} registryData={data} />
+        <FindAndSharePage onOpenCollection={openCollection} onSearch={handleSearch} onPublish={() => setShowPublish(true)} registryData={deriveHome(data)} />
       )}
 
       {showPublish && (
         <PublishCollectionModal
           onClose={() => setShowPublish(false)}
-          onPublishRelease={handlePublishRelease}
-          onListCollection={handleListCollection}
+          onOpenRegistryPr={handleOpenRegistryPr}
           onResolveCollectionMeta={resolveCollectionMeta}
           localCollections={collections}
-          registryEntries={data?.all || []}
+          registryEntries={data?.collections || data?.all || []}
         />
       )}
 

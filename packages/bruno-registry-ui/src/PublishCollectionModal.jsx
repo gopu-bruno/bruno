@@ -1,92 +1,89 @@
-// Publish a collection. Two distinct acts the flow keeps separate:
+// Publish a collection to the registry. In the hybrid model there is no
+// "release" step — publishing is a single act: open a PR that either
 //
-//   1. Publish a VERSION (release)  → the user's OWN repo (tag + opencollection.yml
-//      asset). Needs only repo + version + bundle. Happens every release.
-//   2. LIST on the registry         → a PR adding collections/<ns>/<name>.json to
-//      the registry repo. Needs the display metadata. Happens ONCE (first time);
-//      later version bumps re-bake from the entry's source, no new PR.
+//   • LISTS a new collection  → creates collection/<letter>/<ns>/<name>.json, or
+//   • ADDS a version          → appends a {version, type, source, hash?} to an
+//                               already-listed collection's file.
 //
-// So the listing metadata (title/tagline/category) is collected only when the
-// picked collection isn't already in the index. Host-agnostic via callbacks.
+// Each version is independently sourced: `git` (clone a repo at a ref) or `url`
+// (download a hosted opencollection.yml). Listing metadata is collected only
+// when the picked collection isn't already in the index. Host-agnostic via
+// callbacks.
 //
 // Props:
 //   onClose()
-//   onPublish(result)                          emit mode (website): artifacts generated
-//   onPublishRelease(payload) => {releaseUrl,assetUrl}   real release (app)
-//   onListCollection(payload) => {prUrl}       open the first-time listing PR (app)
+//   onPublish(payload)                         emit mode (website): artifacts generated
+//   onOpenRegistryPr(payload) => {prUrl,viaFork}   app: open the PR
 //   localCollections                           [{uid,name,pathname}] to pick (app)
-//   onResolveCollectionMeta(c) => {repo,subdir,owner}    prefill from git (app)
+//   onResolveCollectionMeta(c) => {repo,subdir,owner}   prefill from git (app)
 //   registryEntries                            index entries, to detect "already listed"
 //   initialMeta
 import React, { useState } from 'react';
 import { Icons } from './icons.jsx';
 import { Modal, ModalHeader, ModalFooter, Field, inputStyle, Btn, Pill } from './primitives.jsx';
-import { buildRegistryEntry, buildReleaseTag, parseGithubRepo } from './registryData.js';
+import { buildRegistryEntry, buildVersionEntry, registryEntryPath, parseGithubRepo } from './registryData.js';
 
 const CATEGORIES = [
   ['payments', 'Payments'], ['ai', 'AI & ML'], ['auth', 'Auth & Identity'], ['devops', 'DevOps & Infra'],
   ['comms', 'Communications'], ['data', 'Data & Analytics'], ['storage', 'Storage & CDN'], ['productivity', 'Productivity'],
 ];
 
-const normRepo = (u) => String(u || '').toLowerCase().trim().replace(/\.git$/, '').replace(/\/+$/, '');
-const normSub = (s) => String(s || '').replace(/^\.?\/+/, '').replace(/\/+$/, '');
+const slug = (s) => String(s || '').toLowerCase().trim().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '');
 
 export function PublishCollectionModal({
-  onClose, onPublish, onPublishRelease, onListCollection,
+  onClose, onPublish, onOpenRegistryPr,
   localCollections, onResolveCollectionMeta, registryEntries, initialMeta,
 }) {
-  const canPublish = typeof onPublishRelease === 'function';
-  const canList = typeof onListCollection === 'function';
-  const hasPicker = canPublish && Array.isArray(localCollections) && localCollections.length > 0;
+  const canPr = typeof onOpenRegistryPr === 'function';
+  const hasPicker = canPr && Array.isArray(localCollections) && localCollections.length > 0;
 
   const [meta, setMeta] = useState({
-    ns: '', name: '', title: '', tagline: '',
-    category: 'payments', version: '1.0.0',
-    repo: '', subdir: '', langs: '', pat: '',
+    ns: '', name: '', title: '', tagline: '', category: 'payments',
+    version: '1.0.0', type: 'git',
+    repo: '', subdir: '', ref: '', url: '', hash: '',
+    langs: '', pat: '',
     ...initialMeta,
   });
-  const [step, setStep] = useState(hasPicker ? 'pick' : 'release');
+  const [step, setStep] = useState(hasPicker ? 'pick' : 'form');
   const [selected, setSelected] = useState(null);
   const [resolving, setResolving] = useState(false);
-  const [result, setResult] = useState(null);     // release result
-  const [prResult, setPrResult] = useState(null);  // listing PR result
+  const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
   const set = (k, v) => setMeta((m) => ({ ...m, [k]: v }));
 
-  const repoOk = !!parseGithubRepo(meta.repo);
   const entry = buildRegistryEntry(meta);
-  const tag = buildReleaseTag(entry.source, meta.version);
-  const parsed = parseGithubRepo(meta.repo);
-  const entryPath = `collections/${entry.ns || '<ns>'}/${entry.name || '<name>'}.json`;
+  const version = buildVersionEntry(meta);
+  const entryPath = registryEntryPath(entry);
   const entryJson = JSON.stringify(entry, null, 2);
-  const ghCmd = `gh release create '${tag}' opencollection.yml --repo ${parsed ? `${parsed.owner}/${parsed.repo}` : '<owner>/<repo>'}`;
+  const repoOk = meta.type !== 'git' || !!parseGithubRepo(meta.repo);
 
-  const findListed = (repo, subdir) =>
-    (registryEntries || []).find((e) => e && e.source
-      && normRepo(e.source.repo) === normRepo(repo)
-      && normSub(e.source.subdir) === normSub(subdir));
-  const alreadyListed = !!findListed(meta.repo, meta.subdir);
+  const findListed = (ns, name) => (registryEntries || []).find((e) => e && e.ns === ns && e.name === name);
+  const alreadyListed = !!findListed(meta.ns.trim(), meta.name.trim());
 
-  const slug = (s) => String(s || '').toLowerCase().trim().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '');
+  const sourceOk = meta.type === 'git' ? repoOk : !!meta.url.trim();
+  const versionOk = !!meta.version.trim() && sourceOk;
+  const listingOk = alreadyListed || (meta.ns.trim() && meta.name.trim() && meta.title.trim());
+  const formOk = versionOk && listingOk && (!canPr || meta.pat.trim());
 
   const chooseCollection = async (c) => {
     setSelected(c);
     setMeta((m) => ({ ...m, name: m.name || slug(c.name), title: m.title || c.name }));
-    setStep('release');
+    setStep('form');
     if (!onResolveCollectionMeta) return;
     setResolving(true);
     try {
       const extra = await onResolveCollectionMeta(c);
       const repo = (extra && extra.repo) || '';
       const subdir = extra && extra.subdir != null ? extra.subdir : '';
-      const listed = repo ? findListed(repo, subdir) : null;
+      const owner = (extra && extra.owner) || '';
+      const name = slug(c.name);
+      const listed = owner ? findListed(owner, name) : null;
       setMeta((m) => ({
         ...m,
         repo: repo || m.repo,
         subdir: subdir != null ? subdir : m.subdir,
-        // If it's already listed, mirror its registry metadata; else prefill ns from the owner.
-        ns: (listed && listed.ns) || m.ns || (extra && extra.owner) || '',
-        name: (listed && listed.name) || m.name || slug(c.name),
+        ns: (listed && listed.ns) || m.ns || owner,
+        name: (listed && listed.name) || m.name || name,
         title: (listed && listed.title) || m.title || c.name,
         tagline: (listed && listed.tagline) || m.tagline,
         category: (listed && listed.category) || m.category,
@@ -98,52 +95,35 @@ export function PublishCollectionModal({
     }
   };
 
-  // Step 1 of the real flow: cut the release on the user's own repo.
-  const submitRelease = async () => {
+  const submit = async () => {
     setError(null);
-    if (canPublish) {
-      if (!(repoOk && meta.version.trim() && meta.pat.trim())) return;
-      setStep('publishing');
-      try {
-        const res = await onPublishRelease({ meta, entry, tag, name: entry.title || tag, body: entry.tagline, collection: selected });
-        setResult(res || {});
-        setStep(alreadyListed || !canList ? 'done' : 'list');
-      } catch (e) {
-        setError((e && e.message) || 'Publish failed.');
-        setStep('release');
-      }
+    if (!formOk) return;
+    if (!canPr) {
+      // Emit mode (website): just surface the artifacts.
+      setStep('done');
+      if (onPublish) onPublish({ entry, version, entryPath, alreadyListed });
       return;
     }
-    // Emit mode (website): just generate the artifacts.
-    if (!(meta.ns.trim() && meta.name.trim() && meta.title.trim() && meta.tagline.trim() && repoOk)) return;
-    setStep('done');
-    if (onPublish) onPublish({ meta, entry, entryPath, tag, ghCmd });
-  };
-
-  // Step 2 (first-time only): open the listing PR to the registry.
-  const submitList = async () => {
-    setError(null);
-    if (!(meta.ns.trim() && meta.name.trim() && meta.title.trim() && meta.tagline.trim())) return;
-    setStep('listing');
+    setStep('submitting');
     try {
-      const res = await onListCollection({ entry, meta });
-      setPrResult(res || {});
+      const res = await onOpenRegistryPr({ entry, version, alreadyListed, meta });
+      setResult(res || {});
       setStep('done');
     } catch (e) {
-      setError((e && e.message) || 'Failed to open the listing PR.');
-      setStep('list');
+      setError((e && e.message) || 'Failed to open the registry PR.');
+      setStep('form');
     }
   };
 
-  const stepperSteps = alreadyListed ? ['Select', 'Publish'] : ['Select', 'Publish', 'List'];
-  const stepperCurrent = step === 'pick' ? 1 : step === 'release' ? 2 : step === 'list' ? 3 : 0;
+  const stepperSteps = ['Select', 'Publish'];
+  const stepperCurrent = step === 'pick' ? 1 : step === 'form' ? 2 : 0;
 
   return (
     <Modal onClose={onClose} width={620}>
       {step === 'pick' ? (
         <>
-          <ModalHeader title="Publish a collection" sub="Pick a collection from your workspace to push to the registry." onClose={onClose} />
-          {hasPicker && <PublishStepper steps={stepperSteps} current={stepperCurrent} />}
+          <ModalHeader title="Publish a collection" sub="Pick a collection from your workspace to publish to the registry." onClose={onClose} />
+          <PublishStepper steps={stepperSteps} current={stepperCurrent} />
           <div style={{ padding: '14px 22px', display: 'grid', gap: 8, maxHeight: '60vh', overflow: 'auto' }}>
             {localCollections.map((c) => (
               <button key={c.uid || c.name} onClick={() => chooseCollection(c)} style={{
@@ -162,11 +142,13 @@ export function PublishCollectionModal({
           </div>
           <ModalFooter><Btn variant="ghost" onClick={onClose}>Cancel</Btn></ModalFooter>
         </>
-      ) : step === 'release' ? (
+      ) : step === 'form' ? (
         <>
           <ModalHeader
-            title={canPublish ? 'Publish a version' : 'Publish a collection'}
-            sub={canPublish ? 'Cut a release on your repo — the tag is the version, the asset is the install.' : 'Tell the registry how to list it. We’ll generate the entry + the version tag.'}
+            title={alreadyListed ? 'Add a version' : 'Publish a collection'}
+            sub={alreadyListed
+              ? 'This collection is listed — opening a PR appends a new version to it.'
+              : 'Opens a PR that lists the collection and its first version on the registry.'}
             onClose={onClose}
           />
           {hasPicker && <PublishStepper steps={stepperSteps} current={stepperCurrent} />}
@@ -178,143 +160,66 @@ export function PublishCollectionModal({
             </div>
           )}
 
-          {canPublish ? (
-            // Real release form — minimal: repo (auto) + version + token.
-            <div style={{ padding: '18px 22px', display: 'grid', gap: 14 }}>
-              <Field label="Source repo" hint={resolving ? 'Resolving from the collection’s git remote…' : 'The release is cut here — your own repo.'}>
-                <input value={meta.repo} onChange={(e) => set('repo', e.target.value)} placeholder={resolving ? 'Resolving…' : 'https://github.com/owner/repo'}
-                  style={inputStyle({ fontFamily: 'var(--font-mono)', borderColor: meta.repo && !repoOk ? 'var(--danger)' : 'var(--border-1)' })} />
-              </Field>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                <Field label="Version" hint="Becomes the release tag.">
-                  <input value={meta.version} onChange={(e) => set('version', e.target.value)} placeholder="1.0.0" style={inputStyle({ fontFamily: 'var(--font-mono)' })} />
-                </Field>
-                <Field label="Release tag">
-                  <div style={{ ...inputStyle({ background: 'var(--bg-crust)', display: 'flex', alignItems: 'center' }) }}>
-                    <code style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--fg-base)' }}>{tag}</code>
-                  </div>
-                </Field>
+          <div style={{ padding: '18px 22px', display: 'grid', gap: 14, maxHeight: '62vh', overflow: 'auto' }}>
+            {resolving && (
+              <div style={{ fontSize: 11.5, color: 'var(--fg-subtext-1)', display: 'flex', gap: 6, alignItems: 'center' }}>
+                <Icons.GitBranch size={12} /> Resolving repo &amp; subdir from the collection’s git remote…
               </div>
-              <Field label="GitHub token" hint="Creates the release on your behalf. Needs contents:write. Not stored.">
+            )}
+            {!alreadyListed && <ListingFields meta={meta} set={set} />}
+            <VersionFields meta={meta} set={set} repoOk={repoOk} />
+            {canPr && (
+              <Field label="GitHub token" hint="Opens the PR on your behalf. Needs public_repo (or write to the registry). Not stored.">
                 <input type="password" value={meta.pat} onChange={(e) => set('pat', e.target.value)} placeholder="ghp_…" autoComplete="off" style={inputStyle({ fontFamily: 'var(--font-mono)' })} />
               </Field>
-              {!alreadyListed && (
-                <div style={{ fontSize: 11.5, color: 'var(--fg-subtext-1)', lineHeight: 1.5, display: 'flex', gap: 7, alignItems: 'flex-start' }}>
-                  <Icons.Rss size={13} style={{ marginTop: 1, flexShrink: 0 }} />
-                  Not on the registry yet — after the release we’ll collect its listing details and open the PR.
-                </div>
-              )}
-              {error && <ErrorNote>{error}</ErrorNote>}
+            )}
+            <div style={{ fontSize: 11.5, color: 'var(--fg-subtext-1)', display: 'flex', gap: 7, alignItems: 'center' }}>
+              <Icons.GitBranch size={13} style={{ flexShrink: 0 }} /> Entry:&nbsp;
+              <code style={{ fontFamily: 'var(--font-mono)', color: 'var(--fg-base)', background: 'var(--bg-crust)', padding: '1px 6px', borderRadius: 3, wordBreak: 'break-all' }}>{entryPath}</code>
             </div>
-          ) : (
-            // Emit mode (website): full metadata form, generates artifacts.
-            <EmitForm meta={meta} set={set} repoOk={repoOk} tag={tag} error={error} />
-          )}
+            {error && <ErrorNote>{error}</ErrorNote>}
+          </div>
 
           <ModalFooter>
             <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
-            <Btn variant="primary" onClick={submitRelease}
-              disabled={canPublish ? !(repoOk && meta.version.trim() && meta.pat.trim()) : !(meta.ns.trim() && meta.name.trim() && meta.title.trim() && meta.tagline.trim() && repoOk)}>
-              {canPublish ? 'Publish version' : 'Generate entry'}
+            <Btn variant="primary" onClick={submit} disabled={!formOk}>
+              {canPr ? (alreadyListed ? 'Open version PR' : 'Open registry PR') : 'Generate entry'}
             </Btn>
           </ModalFooter>
         </>
-      ) : step === 'publishing' ? (
-        <>
-          <ModalHeader title="Publishing…" sub={`${tag}`} />
-          <div style={{ padding: '34px 22px', textAlign: 'center', fontSize: 13, color: 'var(--fg-subtext-1)', fontFamily: 'var(--font-mono)' }}>
-            Creating release · uploading opencollection.yml…
-          </div>
-        </>
-      ) : step === 'list' ? (
-        <>
-          <ModalHeader title="List on the registry" sub="First-time listing — opens a PR adding your entry so it shows on the find page." onClose={onClose} />
-          {hasPicker && <PublishStepper steps={stepperSteps} current={stepperCurrent} />}
-          <div style={{ padding: '18px 22px', display: 'grid', gap: 14 }}>
-            {result && result.releaseUrl && (
-              <div style={{ fontSize: 12, color: 'var(--success)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                <Icons.Check size={13} /> Release published. Now list it (one time).
-              </div>
-            )}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-              <Field label="Publisher (ns)">
-                <input value={meta.ns} onChange={(e) => set('ns', e.target.value)} placeholder="stripe" style={inputStyle({ fontFamily: 'var(--font-mono)' })} />
-              </Field>
-              <Field label="Collection name">
-                <input value={meta.name} onChange={(e) => set('name', e.target.value)} placeholder="stripe-api" style={inputStyle({ fontFamily: 'var(--font-mono)' })} />
-              </Field>
-            </div>
-            <Field label="Display title">
-              <input value={meta.title} onChange={(e) => set('title', e.target.value)} placeholder="Stripe API" style={inputStyle()} />
-            </Field>
-            <Field label="Tagline" hint="One sentence shown in search.">
-              <textarea value={meta.tagline} onChange={(e) => set('tagline', e.target.value)} rows={2} placeholder="Payments, customers and webhooks for the Stripe REST API." style={inputStyle({ minHeight: 52, resize: 'vertical' })} />
-            </Field>
-            <Field label="Category">
-              <select value={meta.category} onChange={(e) => set('category', e.target.value)} style={inputStyle()}>
-                {CATEGORIES.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
-              </select>
-            </Field>
-            {error && <ErrorNote>{error}</ErrorNote>}
-          </div>
-          <ModalFooter>
-            <Btn variant="ghost" onClick={() => setStep('done')}>Skip for now</Btn>
-            <Btn variant="primary" onClick={submitList} disabled={!(meta.ns.trim() && meta.name.trim() && meta.title.trim() && meta.tagline.trim())}>Open registry PR</Btn>
-          </ModalFooter>
-        </>
-      ) : step === 'listing' ? (
+      ) : step === 'submitting' ? (
         <>
           <ModalHeader title="Opening PR…" sub={entryPath} />
           <div style={{ padding: '34px 22px', textAlign: 'center', fontSize: 13, color: 'var(--fg-subtext-1)', fontFamily: 'var(--font-mono)' }}>
-            Creating branch · adding entry · opening pull request…
+            Creating branch · {alreadyListed ? 'appending version' : 'adding entry'} · opening pull request…
           </div>
         </>
-      ) : canPublish ? (
-        // Real "done" — release succeeded; listing status varies.
+      ) : canPr ? (
+        // App "done" — PR opened.
         <>
-          <ModalHeader title="Published" sub={tag} onClose={onClose} />
+          <ModalHeader title="PR opened" sub={entryPath} onClose={onClose} />
           <div style={{ padding: '18px 22px', display: 'grid', gap: 14 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13 }}>
               <span style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--success-bg)', color: 'var(--success)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><Icons.Check size={16} /></span>
-              <span>Release published — downloads of <code style={{ fontFamily: 'var(--font-mono)' }}>opencollection.yml</code> now count as installs.</span>
+              <span>{alreadyListed ? `Version ${meta.version} added` : 'Listing'} — once a maintainer merges, it appears on the find page.</span>
             </div>
-            {result && result.releaseUrl && <a href={result.releaseUrl} target="_blank" rel="noreferrer" style={{ color: 'var(--link)', fontSize: 12.5, wordBreak: 'break-all' }}>{result.releaseUrl}</a>}
-
-            <div style={{ paddingTop: 10, borderTop: '1px solid var(--border-1)' }}>
-              {alreadyListed ? (
-                <div style={{ fontSize: 12.5, color: 'var(--fg-subtext-1)', display: 'flex', gap: 7, alignItems: 'flex-start' }}>
-                  <Icons.Check size={14} style={{ color: 'var(--success)', marginTop: 1, flexShrink: 0 }} />
-                  Already listed on the registry — its version &amp; install count refresh on the next index rebuild. No PR needed.
-                </div>
-              ) : prResult && prResult.prUrl ? (
-                <div style={{ fontSize: 12.5 }}>
-                  <div style={{ marginBottom: 4 }}>
-                    Listing PR opened{prResult.viaFork ? ' from your fork' : ''} — once a maintainer merges it, the collection appears on the find page:
-                  </div>
-                  <a href={prResult.prUrl} target="_blank" rel="noreferrer" style={{ color: 'var(--link)', wordBreak: 'break-all' }}>{prResult.prUrl}</a>
-                </div>
-              ) : (
-                <>
-                  <div style={{ fontSize: 12.5, color: 'var(--fg-subtext-1)', marginBottom: 8 }}>
-                    Not listed yet — add this entry via a PR to the registry to appear on the find page:
-                  </div>
-                  <CopyBlock label={<span style={{ fontFamily: 'var(--font-mono)', fontWeight: 400, color: 'var(--fg-subtext-1)' }}>{entryPath}</span>} text={entryJson} mono />
-                </>
-              )}
-            </div>
+            {result && result.prUrl && (
+              <a href={result.prUrl} target="_blank" rel="noreferrer" style={{ color: 'var(--link)', fontSize: 12.5, wordBreak: 'break-all' }}>
+                {result.prUrl}{result.viaFork ? ' (from your fork)' : ''}
+              </a>
+            )}
           </div>
           <ModalFooter><Btn variant="primary" onClick={onClose}>Close</Btn></ModalFooter>
         </>
       ) : (
-        // Emit-mode "done" (website): the two artifacts to apply manually.
+        // Emit-mode "done" (website): the entry to add via PR.
         <>
-          <ModalHeader title="Ready to publish" sub="Two artifacts — add the entry to the registry, and cut the release on your repo." onClose={onClose} />
+          <ModalHeader title="Ready to publish" sub="Add this entry to the registry via a pull request." onClose={onClose} />
           <div style={{ padding: '18px 22px', display: 'grid', gap: 18 }}>
-            <CopyBlock label={<>1 · Registry entry <span style={{ color: 'var(--fg-subtext-1)', fontFamily: 'var(--font-mono)', fontWeight: 400 }}>{entryPath}</span></>} text={entryJson} hint="Add this file via a PR to the collection-registry repo." mono />
-            <CopyBlock label={<>2 · Cut the release <Pill tone="brand">v{meta.version}</Pill></>} text={ghCmd} hint="Creates the git tag + opencollection.yml asset GitHub counts as installs." />
+            <CopyBlock label={<>Registry entry <span style={{ color: 'var(--fg-subtext-1)', fontFamily: 'var(--font-mono)', fontWeight: 400 }}>{entryPath}</span></>} text={entryJson} hint="Add this file (or append the version to the existing file) via a PR to the registry repo." mono />
           </div>
           <ModalFooter>
-            <Btn variant="ghost" onClick={() => setStep('release')}>Back</Btn>
+            <Btn variant="ghost" onClick={() => setStep('form')}>Back</Btn>
             <Btn variant="primary" onClick={onClose}>Done</Btn>
           </ModalFooter>
         </>
@@ -323,45 +228,71 @@ export function PublishCollectionModal({
   );
 }
 
-function EmitForm({ meta, set, repoOk, tag, error }) {
+// Listing metadata — collected only the first time a collection is published.
+function ListingFields({ meta, set }) {
   return (
-    <div style={{ padding: '18px 22px', display: 'grid', gap: 14 }}>
+    <>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
         <Field label="Publisher (ns)" hint="Your owner/org handle.">
-          <div style={{ display: 'flex', alignItems: 'center', border: '1px solid var(--border-1)', borderRadius: 4, overflow: 'hidden', background: '#fff' }}>
-            <span style={{ padding: '7px 8px 7px 10px', color: 'var(--fg-subtext-1)', fontFamily: 'var(--font-mono)', fontSize: 12 }}>@</span>
-            <input value={meta.ns} onChange={(e) => set('ns', e.target.value)} placeholder="stripe" style={inputStyle({ border: 0, fontFamily: 'var(--font-mono)', paddingLeft: 0 })} />
-          </div>
+          <input value={meta.ns} onChange={(e) => set('ns', e.target.value)} placeholder="stripe" style={inputStyle({ fontFamily: 'var(--font-mono)' })} />
         </Field>
         <Field label="Collection name">
           <input value={meta.name} onChange={(e) => set('name', e.target.value)} placeholder="stripe-api" style={inputStyle({ fontFamily: 'var(--font-mono)' })} />
         </Field>
       </div>
-      <Field label="Display title"><input value={meta.title} onChange={(e) => set('title', e.target.value)} placeholder="Stripe API" style={inputStyle()} /></Field>
+      <Field label="Display title">
+        <input value={meta.title} onChange={(e) => set('title', e.target.value)} placeholder="Stripe API" style={inputStyle()} />
+      </Field>
       <Field label="Tagline" hint="One sentence shown in search.">
         <textarea value={meta.tagline} onChange={(e) => set('tagline', e.target.value)} rows={2} placeholder="Payments, customers and webhooks for the Stripe REST API." style={inputStyle({ minHeight: 52, resize: 'vertical' })} />
       </Field>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-        <Field label="Category">
-          <select value={meta.category} onChange={(e) => set('category', e.target.value)} style={inputStyle()}>
-            {CATEGORIES.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
-          </select>
-        </Field>
-        <Field label="Version" hint="Becomes the release tag.">
+      <Field label="Category">
+        <select value={meta.category} onChange={(e) => set('category', e.target.value)} style={inputStyle()}>
+          {CATEGORIES.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+        </select>
+      </Field>
+    </>
+  );
+}
+
+// Version source — git (repo/ref/subdir) or url (artifact), + optional hash.
+function VersionFields({ meta, set, repoOk }) {
+  return (
+    <div style={{ display: 'grid', gap: 14, paddingTop: 4, borderTop: '1px solid var(--border-1)' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 10 }}>
+        <Field label="Version" hint="Semver — major.minor.patch.">
           <input value={meta.version} onChange={(e) => set('version', e.target.value)} placeholder="1.0.0" style={inputStyle({ fontFamily: 'var(--font-mono)' })} />
         </Field>
+        <Field label="Source type">
+          <select value={meta.type} onChange={(e) => set('type', e.target.value)} style={inputStyle()}>
+            <option value="git">git — clone a repo</option>
+            <option value="url">url — hosted artifact</option>
+          </select>
+        </Field>
       </div>
-      <Field label="Source repo" hint="The GitHub repo the collection lives in.">
-        <input value={meta.repo} onChange={(e) => set('repo', e.target.value)} placeholder="https://github.com/owner/repo" style={inputStyle({ fontFamily: 'var(--font-mono)', borderColor: meta.repo && !repoOk ? 'var(--danger)' : 'var(--border-1)' })} />
+      {meta.type === 'git' ? (
+        <>
+          <Field label="Source repo" hint="The git repo the collection lives in.">
+            <input value={meta.repo} onChange={(e) => set('repo', e.target.value)} placeholder="https://github.com/owner/repo"
+              style={inputStyle({ fontFamily: 'var(--font-mono)', borderColor: meta.repo && !repoOk ? 'var(--danger)' : 'var(--border-1)' })} />
+          </Field>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <Field label="Subdir" hint="Path within the repo (optional).">
+              <input value={meta.subdir} onChange={(e) => set('subdir', e.target.value)} placeholder="stripe-api" style={inputStyle({ fontFamily: 'var(--font-mono)' })} />
+            </Field>
+            <Field label="Ref" hint="Tag/branch/commit (optional).">
+              <input value={meta.ref} onChange={(e) => set('ref', e.target.value)} placeholder="stripe-api@1.0.0" style={inputStyle({ fontFamily: 'var(--font-mono)' })} />
+            </Field>
+          </div>
+        </>
+      ) : (
+        <Field label="Artifact URL" hint="Direct download of the opencollection.yml (any host).">
+          <input value={meta.url} onChange={(e) => set('url', e.target.value)} placeholder="https://cdn.example.com/stripe/stripe-api/1.0.0/opencollection.yml" style={inputStyle({ fontFamily: 'var(--font-mono)' })} />
+        </Field>
+      )}
+      <Field label="Hash" hint="Optional SHA-256 of the artifact (sha256-…). Verified on install.">
+        <input value={meta.hash} onChange={(e) => set('hash', e.target.value)} placeholder="sha256-…" style={inputStyle({ fontFamily: 'var(--font-mono)' })} />
       </Field>
-      <Field label="Subdir" hint="Path within the repo, if not at the root. Sets the tag prefix.">
-        <input value={meta.subdir} onChange={(e) => set('subdir', e.target.value)} placeholder="stripe-stripe-api" style={inputStyle({ fontFamily: 'var(--font-mono)' })} />
-      </Field>
-      <div style={{ fontSize: 11.5, color: 'var(--fg-subtext-1)', display: 'flex', alignItems: 'center', gap: 8 }}>
-        <Icons.GitBranch size={13} /> Release tag:&nbsp;
-        <code style={{ fontFamily: 'var(--font-mono)', color: 'var(--fg-base)', background: 'var(--bg-crust)', padding: '1px 6px', borderRadius: 3 }}>{tag}</code>
-      </div>
-      {error && <ErrorNote>{error}</ErrorNote>}
     </div>
   );
 }
@@ -374,7 +305,6 @@ function ErrorNote({ children }) {
   );
 }
 
-// Step indicator (design's wizard stepper).
 function PublishStepper({ steps, current }) {
   return (
     <div style={{ display: 'flex', padding: '12px 22px 0', gap: 6 }}>
