@@ -1122,6 +1122,22 @@ function parseGithubRepo(url) {
   } : null;
 }
 
+// Host-agnostic "looks like a git remote" check — accepts any host (GitHub,
+// GitLab, Bitbucket, self-hosted) over http(s)/ssh/git, plus scp-style
+// git@host:owner/repo. Used to validate a git source without assuming a host.
+function isGitRepoUrl(url) {
+  var s = String(url || '').trim();
+  if (!s) return false;
+  if (/^[^@\s]+@[^:\s]+:.+/.test(s)) return true; // scp-like: git@host:path
+  try {
+    var u = new URL(s);
+    if (!['http:', 'https:', 'ssh:', 'git:'].includes(u.protocol)) return false;
+    return !!u.hostname && u.pathname.replace(/^\/+|\/+$/g, '').length > 0;
+  } catch (_unused) {
+    return false;
+  }
+}
+
 // Compare two versions by semver precedence. Core (major.minor.patch) compares
 // numerically; a prerelease (e.g. 1.0.0-beta) ranks BELOW its release; prerelease
 // identifiers compare dot-wise. Returns >0 if a is newer. Mirrors cmpVersion in
@@ -1332,7 +1348,7 @@ function _fetchInstallCount() {
       if (typeof data.installs === 'number') return data.installs;
       if (typeof data.count === 'number') return data.count;
       return null;
-    } catch (_unused) {
+    } catch (_unused2) {
       return null; // API down / unreachable — caller hides the stat
     }
   });
@@ -1760,6 +1776,19 @@ var CATEGORY_LABELS = {
   storage: 'Storage & CDN',
   productivity: 'Productivity'
 };
+
+// Host-aware "view source" link. Each host has its own tree-path convention, so
+// deep-link by host and fall back to the repo root for unknown hosts.
+function treeUrl(repo, ref, subdir) {
+  var base = String(repo || '').replace(/\.git$/, '').replace(/\/+$/, '');
+  if (!base) return null;
+  if (!subdir) return base;
+  var r = ref;
+  if (/github\.com/i.test(base)) return "".concat(base, "/tree/").concat(r, "/").concat(subdir);
+  if (/gitlab\./i.test(base)) return "".concat(base, "/-/tree/").concat(r, "/").concat(subdir);
+  if (/bitbucket\.org/i.test(base)) return "".concat(base, "/src/").concat(r, "/").concat(subdir);
+  return base; // unknown host — deep path format unknown, link to the repo
+}
 function CollectionDetailPage(_ref) {
   var {
     collection,
@@ -1785,7 +1814,7 @@ function CollectionDetailPage(_ref) {
   var repo = git && git.repo;
   var subdir = git && git.subdir ? git.subdir : '';
   var ref = git && git.ref || 'main';
-  var sourceUrl = repo ? subdir ? "".concat(repo, "/tree/").concat(ref, "/").concat(subdir) : repo : latest && latest.type === 'url' ? latest.source && latest.source.url : null;
+  var sourceUrl = repo ? treeUrl(repo, ref, subdir) : latest && latest.type === 'url' ? latest.source && latest.source.url : null;
   var sourceLabel = repo ? "".concat(repo.replace(/^https?:\/\//, '')).concat(subdir ? '/' + subdir : '') : latest && latest.type === 'url' ? latest.source && latest.source.url : '';
   var installCmd = installCommand || "bruno install ".concat(slug);
   return /*#__PURE__*/React.createElement("div", {
@@ -2266,7 +2295,7 @@ function PublishCollectionModal(_ref) {
   var version = buildVersionEntry(meta);
   var entryPath = registryEntryPath(entry);
   var entryJson = JSON.stringify(entry, null, 2);
-  var repoOk = meta.type !== 'git' || !!parseGithubRepo(meta.repo);
+  var repoOk = meta.type !== 'git' || isGitRepoUrl(meta.repo);
   var findListed = (ns, name) => (registryEntries || []).find(e => e && e.ns === ns && e.name === name);
   var alreadyListed = !!findListed(meta.ns.trim(), meta.name.trim());
   var sourceOk = meta.type === 'git' ? repoOk : !!meta.url.trim();
@@ -3090,6 +3119,7 @@ exports.fmtN = fmtN;
 exports.getRegistryData = getRegistryData;
 exports.gitSourceOf = gitSourceOf;
 exports.inputStyle = inputStyle;
+exports.isGitRepoUrl = isGitRepoUrl;
 exports.latestVersionEntry = latestVersionEntry;
 exports.latestVersionLabel = latestVersionLabel;
 exports.parseGithubRepo = parseGithubRepo;

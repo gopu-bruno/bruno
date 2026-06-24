@@ -36,6 +36,7 @@ export {
   REGISTRY_INDEX_CONTENTS_API_URL,
   fetchRegistryIndex,
   parseGithubRepo,
+  isGitRepoUrl,
   cmpVersion,
   sortedVersions,
   latestVersionEntry,

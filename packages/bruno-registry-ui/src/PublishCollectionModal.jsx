@@ -21,7 +21,7 @@
 import React, { useState } from 'react';
 import { Icons } from './icons.jsx';
 import { Modal, ModalHeader, ModalFooter, Field, inputStyle, Btn, Pill } from './primitives.jsx';
-import { buildRegistryEntry, buildVersionEntry, registryEntryPath, parseGithubRepo } from './registryData.js';
+import { buildRegistryEntry, buildVersionEntry, registryEntryPath, isGitRepoUrl } from './registryData.js';
 
 const CATEGORIES = [
   ['payments', 'Payments'], ['ai', 'AI & ML'], ['auth', 'Auth & Identity'], ['devops', 'DevOps & Infra'],
@@ -55,7 +55,7 @@ export function PublishCollectionModal({
   const version = buildVersionEntry(meta);
   const entryPath = registryEntryPath(entry);
   const entryJson = JSON.stringify(entry, null, 2);
-  const repoOk = meta.type !== 'git' || !!parseGithubRepo(meta.repo);
+  const repoOk = meta.type !== 'git' || isGitRepoUrl(meta.repo);
 
   const findListed = (ns, name) => (registryEntries || []).find((e) => e && e.ns === ns && e.name === name);
   const alreadyListed = !!findListed(meta.ns.trim(), meta.name.trim());

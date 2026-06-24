@@ -94,6 +94,22 @@ export function parseGithubRepo(url) {
   return m ? { owner: m[1], repo: m[2].replace(/\.git$/, '') } : null;
 }
 
+// Host-agnostic "looks like a git remote" check — accepts any host (GitHub,
+// GitLab, Bitbucket, self-hosted) over http(s)/ssh/git, plus scp-style
+// git@host:owner/repo. Used to validate a git source without assuming a host.
+export function isGitRepoUrl(url) {
+  const s = String(url || '').trim();
+  if (!s) return false;
+  if (/^[^@\s]+@[^:\s]+:.+/.test(s)) return true; // scp-like: git@host:path
+  try {
+    const u = new URL(s);
+    if (!['http:', 'https:', 'ssh:', 'git:'].includes(u.protocol)) return false;
+    return !!u.hostname && u.pathname.replace(/^\/+|\/+$/g, '').length > 0;
+  } catch {
+    return false;
+  }
+}
+
 // Compare two versions by semver precedence. Core (major.minor.patch) compares
 // numerically; a prerelease (e.g. 1.0.0-beta) ranks BELOW its release; prerelease
 // identifiers compare dot-wise. Returns >0 if a is newer. Mirrors cmpVersion in

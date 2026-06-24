@@ -15,6 +15,19 @@ const CATEGORY_LABELS = {
   comms: 'Communications', data: 'Data & Analytics', storage: 'Storage & CDN', productivity: 'Productivity',
 };
 
+// Host-aware "view source" link. Each host has its own tree-path convention, so
+// deep-link by host and fall back to the repo root for unknown hosts.
+function treeUrl(repo, ref, subdir) {
+  const base = String(repo || '').replace(/\.git$/, '').replace(/\/+$/, '');
+  if (!base) return null;
+  if (!subdir) return base;
+  const r = ref || 'HEAD';
+  if (/github\.com/i.test(base)) return `${base}/tree/${r}/${subdir}`;
+  if (/gitlab\./i.test(base)) return `${base}/-/tree/${r}/${subdir}`;
+  if (/bitbucket\.org/i.test(base)) return `${base}/src/${r}/${subdir}`;
+  return base; // unknown host — deep path format unknown, link to the repo
+}
+
 export function CollectionDetailPage({
   collection,
   onBack,
@@ -40,7 +53,7 @@ export function CollectionDetailPage({
   const subdir = git && git.subdir ? git.subdir : '';
   const ref = (git && git.ref) || 'main';
   const sourceUrl = repo
-    ? (subdir ? `${repo}/tree/${ref}/${subdir}` : repo)
+    ? treeUrl(repo, ref, subdir)
     : (latest && latest.type === 'url' ? (latest.source && latest.source.url) : null);
   const sourceLabel = repo
     ? `${repo.replace(/^https?:\/\//, '')}${subdir ? '/' + subdir : ''}`
