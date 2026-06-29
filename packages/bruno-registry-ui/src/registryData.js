@@ -4,6 +4,12 @@
 // like the live index (fetchRegistryIndex); real data replaces it on mount.
 // No usage stats are stored — only authored metadata + editorial flags.
 
+// Semver + the category catalog are shared with the server via the isomorphic
+// @usebruno/registry-core, so version resolution and category labels can't drift
+// between the app and the projection. (The node-only SSRF guard in that package
+// is NOT imported here — it lives behind the "/ssrf" subpath.)
+import { cmpVersion, CATEGORY_META } from '@usebruno/registry-core';
+
 export const PUBLIC_FEATURED = [
   { ns: 'stripe', name: 'stripe-api', title: 'Stripe API', tagline: 'Official Stripe REST API collection — payments, customers, webhooks.', category: 'payments', verified: true, official: true, langs: ['REST', 'Webhooks'], color: '#635bff' },
   { ns: 'github', name: 'rest-api', title: 'GitHub REST API', tagline: 'Full GitHub REST API v2022-11-28, 600+ requests with examples.', category: 'devops', verified: true, official: true, langs: ['REST', 'GraphQL'], color: '#24292e' },
@@ -110,34 +116,11 @@ export function isGitRepoUrl(url) {
   }
 }
 
-// Compare two versions by semver precedence. Core (major.minor.patch) compares
-// numerically; a prerelease (e.g. 1.0.0-beta) ranks BELOW its release; prerelease
-// identifiers compare dot-wise. Returns >0 if a is newer. Mirrors cmpVersion in
-// the registry's build-index.mjs — keep the two in sync.
-export function cmpVersion(a, b) {
-  const parse = (v) => {
-    const core = String(v == null ? '' : v).trim().replace(/^v/, '').split('+')[0];
-    const [main, pre] = core.split('-');
-    const nums = main.split('.').map((n) => (/^\d+$/.test(n) ? Number(n) : 0));
-    while (nums.length < 3) nums.push(0);
-    return { nums, pre: pre || null };
-  };
-  const pa = parse(a), pb = parse(b);
-  for (let i = 0; i < 3; i++) if (pa.nums[i] !== pb.nums[i]) return pa.nums[i] - pb.nums[i];
-  if (!pa.pre && !pb.pre) return 0;
-  if (!pa.pre) return 1;   // release outranks prerelease
-  if (!pb.pre) return -1;
-  const ai = pa.pre.split('.'), bi = pb.pre.split('.');
-  for (let i = 0; i < Math.max(ai.length, bi.length); i++) {
-    const x = ai[i], y = bi[i];
-    if (x === undefined) return -1;
-    if (y === undefined) return 1;
-    const xn = /^\d+$/.test(x), yn = /^\d+$/.test(y);
-    if (xn && yn) { if (Number(x) !== Number(y)) return Number(x) - Number(y); }
-    else if (x !== y) return x > y ? 1 : -1;
-  }
-  return 0;
-}
+// Semver precedence now lives in @usebruno/registry-core (imported at the top of
+// this file) — one implementation shared with the server, so the app and the
+// rebuild can't disagree on which version is latest. Re-exported here so existing
+// consumers (`import { cmpVersion } from '@usebruno/registry-ui'`) keep working.
+export { cmpVersion };
 
 // A collection's versions, newest-first.
 export function sortedVersions(collection) {
@@ -219,17 +202,10 @@ export function registryEntryPath(entry) {
 // The index is a pure catalog ({ collections, totalCollections, publishers }).
 // featured / trending / categories are NOT baked into it — they're derived here
 // from the flags/category on each entry, so the data contract isn't coupled to
-// any one homepage and entries aren't duplicated.
-export const CATEGORY_META = {
-  payments:     { label: 'Payments',         icon: 'card' },
-  ai:           { label: 'AI & ML',          icon: 'sparkle' },
-  auth:         { label: 'Auth & Identity',  icon: 'key' },
-  devops:       { label: 'DevOps & Infra',   icon: 'server' },
-  comms:        { label: 'Communications',   icon: 'message' },
-  data:         { label: 'Data & Analytics', icon: 'chart' },
-  storage:      { label: 'Storage & CDN',    icon: 'box' },
-  productivity: { label: 'Productivity',     icon: 'layout' },
-};
+// any one homepage and entries aren't duplicated. The category catalog itself
+// (id -> label/icon) lives in @usebruno/registry-core, shared with the server's
+// facet/discover output; re-exported here under its long-standing name.
+export { CATEGORY_META };
 
 // Shape the find page expects, derived from a fetched index. Accepts the pure
 // catalog ({ collections }) and, defensively, an older { all } index — returns
@@ -273,4 +249,177 @@ export async function fetchInstallCount(ns, name) {
   } catch {
     return null; // API down / unreachable — caller hides the stat
   }
+}
+
+// --- RegistrySource abstraction (Phase C) -----------------------------------
+// One interface, two backings, so the same host code works against either half
+// of the hybrid model:
+//
+//   StaticIndexSource — ONE index.json on any host (raw CDN, GitHub/GitLab/
+//     self-hosted). deriveHome + client-side search. Works offline/serverless;
+//     no counts, no real facets. This IS the deriveHome path, not thrown away.
+//
+//   ApiSource — the server's projection: /discover (real trending from measured
+//     installs), /search (FTS + facet counts at scale), /collection, /installs
+//     (read + advisory report). Honors the advisory contract — getDiscover()
+//     falls back to a passed-in static source when the server is unreachable, so
+//     browse/install survive a server outage.
+//
+// Both take an injected IO ({ getJson, postJson }) so the host decides transport:
+// the website uses browser fetch; the desktop app routes through the Electron
+// main process (renderer CSP blocks external fetch). Methods:
+//   getDiscover()                      -> { featured, trending, categories, totalCollections, publishers, monthlyInstalls? }
+//   search(query, filters)             -> { results, total, facets, page, perPage }
+//   getCollection(ns, name)            -> a single record (or null)
+//   getInstallCount(ns, name)          -> number | null
+//   reportInstall(ns, name, source)    -> void (advisory; never throws to caller)
+
+const browserIo = {
+  getJson: (url, headers) => fetch(url, { cache: 'no-store', headers }).then((r) => {
+    if (!r.ok) throw new Error(`GET ${url} -> ${r.status}`);
+    return r.json();
+  }),
+  postJson: (url, body) => fetch(url, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body || {})
+  }).then((r) => (r.ok ? r.json() : null))
+};
+
+export class StaticIndexSource {
+  constructor({ indexUrl, statsUrl, io } = {}) {
+    this.indexUrl = indexUrl || REGISTRY_INDEX_URL;
+    this.statsUrl = statsUrl || REGISTRY_STATS_URL;
+    this.io = io || browserIo;
+    this._index = null;
+    // Which backing served the last call — always 'static' for this source. The
+    // host reads `source.lastMode` to show a "server vs offline index" badge.
+    this.lastMode = 'static';
+  }
+  async _load() {
+    if (!this._index) this._index = await this.io.getJson(this.indexUrl);
+    return this._index;
+  }
+  async getDiscover() {
+    return deriveHome(await this._load());
+  }
+  // Client-side search over the cached index — substring match on title/ns/name/
+  // tagline, optional category filter, local facet counts.
+  async search(query, filters = {}) {
+    const index = await this._load();
+    const all = (index && (index.collections || index.all)) || [];
+    const q = String(query || '').trim().toLowerCase();
+    const inCategory = (c) => !filters.category || c.category === filters.category;
+    const matches = (c) => !q || [c.title, c.ns, c.name, c.tagline].some((f) => String(f || '').toLowerCase().includes(q));
+    const results = all.filter((c) => inCategory(c) && matches(c)).sort((a, b) => a.title.localeCompare(b.title));
+    const facetSet = all.filter(matches);
+    const counts = {};
+    for (const c of facetSet) counts[c.category] = (counts[c.category] || 0) + 1;
+    const category = Object.entries(counts)
+      .map(([id, count]) => ({ id, label: (CATEGORY_META[id] || {}).label || id, count }))
+      .sort((a, b) => b.count - a.count);
+    return { results, total: results.length, page: 1, perPage: results.length, facets: { category } };
+  }
+  async getCollection(ns, name) {
+    const index = await this._load();
+    const all = (index && (index.collections || index.all)) || [];
+    return all.find((c) => c.ns === ns && c.name === name) || null;
+  }
+  async getInstallCount(ns, name) {
+    if (!this.statsUrl) return null;
+    try {
+      const data = await this.io.getJson(`${this.statsUrl.replace(/\/$/, '')}/installs/${ns}/${name}`);
+      return typeof data.installs === 'number' ? data.installs : (typeof data.count === 'number' ? data.count : null);
+    } catch {
+      return null;
+    }
+  }
+  async reportInstall() { /* static index has no write path — advisory no-op */ }
+}
+
+export class ApiSource {
+  // `fallback` is an optional StaticIndexSource used when the server is
+  // unreachable — the advisory contract: browse/install survive an outage.
+  constructor({ baseUrl, io, fallback } = {}) {
+    this.base = String(baseUrl || '').replace(/\/$/, '');
+    this.io = io || browserIo;
+    this.fallback = fallback || null;
+    // Which backing served the last catalog call: 'api' (the live server),
+    // 'static' (fell back to the git-backed index), or 'error' (both failed).
+    // The host reads `source.lastMode` after a call to render a status badge —
+    // making the advisory fallback visible instead of silent.
+    this.lastMode = null;
+  }
+  // Run a server call; on failure transparently fall back to the static index
+  // and record which one actually answered.
+  async _viaServer(serverCall, fallbackCall) {
+    try {
+      const out = await serverCall();
+      this.lastMode = 'api';
+      return out;
+    } catch (e) {
+      if (this.fallback) {
+        this.lastMode = 'static';
+        return fallbackCall();
+      }
+      this.lastMode = 'error';
+      throw e;
+    }
+  }
+  async getDiscover() {
+    return this._viaServer(
+      () => this.io.getJson(`${this.base}/v1/discover`),
+      () => this.fallback.getDiscover()
+    );
+  }
+  async search(query, filters = {}) {
+    const params = new URLSearchParams();
+    if (query) params.set('q', query);
+    if (filters.category) params.set('category', filters.category);
+    if (filters.sort) params.set('sort', filters.sort);
+    if (filters.page) params.set('page', String(filters.page));
+    return this._viaServer(
+      () => this.io.getJson(`${this.base}/v1/search?${params.toString()}`),
+      () => this.fallback.search(query, filters)
+    );
+  }
+  async getCollection(ns, name) {
+    try {
+      const out = await this.io.getJson(`${this.base}/v1/collection/${ns}/${name}`);
+      this.lastMode = 'api';
+      return out;
+    } catch (e) {
+      if (this.fallback) {
+        this.lastMode = 'static';
+        return this.fallback.getCollection(ns, name);
+      }
+      this.lastMode = 'error';
+      return null;
+    }
+  }
+  async getInstallCount(ns, name) {
+    try {
+      const data = await this.io.getJson(`${this.base}/v1/installs/${ns}/${name}`);
+      return typeof data.installs === 'number' ? data.installs : null;
+    } catch {
+      return null;
+    }
+  }
+  async reportInstall(ns, name, source) {
+    // Advisory, fire-and-forget — failures must never surface to the user or
+    // block the install that already succeeded.
+    try {
+      await this.io.postJson(`${this.base}/v1/installs/${ns}/${name}`, { source });
+    } catch { /* swallow — advisory */ }
+  }
+}
+
+// Build a source from a descriptor. `{ kind: 'api', baseUrl }` with an optional
+// static fallback, or `{ kind: 'static', indexUrl, statsUrl }`.
+export function createRegistrySource(descriptor = {}, io) {
+  if (descriptor.kind === 'api' && descriptor.baseUrl) {
+    const fallback = descriptor.indexUrl
+      ? new StaticIndexSource({ indexUrl: descriptor.indexUrl, statsUrl: descriptor.statsUrl, io })
+      : null;
+    return new ApiSource({ baseUrl: descriptor.baseUrl, io, fallback });
+  }
+  return new StaticIndexSource({ indexUrl: descriptor.indexUrl, statsUrl: descriptor.statsUrl, io });
 }

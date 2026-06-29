@@ -1,0 +1,17 @@
+{
+  "name": "@usebruno/registry-core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Isomorphic core for the OpenCollection registry — semver precedence, the category catalog, and entry validation/derivation — shared by the server (rebuild + API) and the app (registry-ui). One source of truth so validation and version resolution can't drift between the two halves of the hybrid model. The node-only SSRF guard is a separate subpath so it never enters a browser bundle.",
+  "main": "src/index.mjs",
+  "module": "src/index.mjs",
+  "exports": {
+    ".": "./src/index.mjs",
+    "./semver": "./src/semver.mjs",
+    "./schema": "./src/schema.mjs",
+    "./categories": "./src/categories.mjs",
+    "./ssrf": "./src/ssrf.mjs",
+    "./package.json": "./package.json"
+  }
+}

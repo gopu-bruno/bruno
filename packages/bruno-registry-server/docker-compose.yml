@@ -1,0 +1,24 @@
+# Postgres for the registry projection. Port 5433 on the host so it never
+# collides with a local 5432. `npm run db:reset` wipes the volume — but note:
+# even a full wipe is recoverable for the catalog (rebuild from git); only the
+# advisory install_events are genuinely lost, which is acceptable by design.
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: registry-pg
+    environment:
+      POSTGRES_USER: registry
+      POSTGRES_PASSWORD: registry
+      POSTGRES_DB: registry
+    ports:
+      - '5433:5432'
+    volumes:
+      - registry-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U registry -d registry']
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  registry-pgdata:

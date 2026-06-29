@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 
 // Shared icon library — Tabler-style icons (stroke 1.75, 16px default).
 // Pure React + inline SVG; no dependencies. Portable to bruno-app as-is.
@@ -358,9 +358,9 @@ function _asyncToGenerator(n) {
 function _defineProperty(e, r, t) {
   return (r = _toPropertyKey(r)) in e ? Object.defineProperty(e, r, {
     value: t,
-    enumerable: true,
-    configurable: true,
-    writable: true
+    enumerable: !0,
+    configurable: !0,
+    writable: !0
   }) : e[r] = t, e;
 }
 function ownKeys(e, r) {
@@ -376,7 +376,7 @@ function ownKeys(e, r) {
 function _objectSpread2(e) {
   for (var r = 1; r < arguments.length; r++) {
     var t = null != arguments[r] ? arguments[r] : {};
-    r % 2 ? ownKeys(Object(t), true).forEach(function (r) {
+    r % 2 ? ownKeys(Object(t), !0).forEach(function (r) {
       _defineProperty(e, r, t[r]);
     }) : Object.getOwnPropertyDescriptors ? Object.defineProperties(e, Object.getOwnPropertyDescriptors(t)) : ownKeys(Object(t)).forEach(function (r) {
       Object.defineProperty(e, r, Object.getOwnPropertyDescriptor(t, r));
@@ -388,7 +388,7 @@ function _toPrimitive(t, r) {
   if ("object" != typeof t || !t) return t;
   var e = t[Symbol.toPrimitive];
   if (void 0 !== e) {
-    var i = e.call(t, r);
+    var i = e.call(t, r || "default");
     if ("object" != typeof i) return i;
     throw new TypeError("@@toPrimitive must return a primitive value.");
   }
@@ -969,11 +969,54 @@ function CollectionCard(_ref1) {
   }), " ", fmtN(c.installs))));
 }
 
-// Bundled fallback snapshot — opencollection.dev
-// Identity model: GitHub-style namespace (owner/repo); the registry is a thin
-// index over real git repos. This is only a pre-load fallback shaped exactly
-// like the live index (fetchRegistryIndex); real data replaces it on mount.
-// No usage stats are stored — only authored metadata + editorial flags.
+// Semver precedence — the SINGLE implementation. Core (major.minor.patch)
+// compares numerically; a prerelease (e.g. 1.0.0-beta) ranks BELOW its release;
+// prerelease identifiers compare dot-wise (numeric vs string). Returns >0 if a is
+// newer than b. Shared by the server (rebuild + API) and the app (registry-ui)
+// so version resolution can't drift between them.
+
+
+function cmpVersion(a, b) {
+  const parse = (v) => {
+    const core = String(v == null ? '' : v).trim().replace(/^v/, '').split('+')[0];
+    const [main, pre] = core.split('-');
+    const nums = main.split('.').map((n) => (/^\d+$/.test(n) ? Number(n) : 0));
+    while (nums.length < 3) nums.push(0);
+    return { nums, pre: pre || null };
+  };
+  const pa = parse(a), pb = parse(b);
+  for (let i = 0; i < 3; i++) if (pa.nums[i] !== pb.nums[i]) return pa.nums[i] - pb.nums[i];
+  if (!pa.pre && !pb.pre) return 0;
+  if (!pa.pre) return 1; // release outranks prerelease
+  if (!pb.pre) return -1;
+  const ai = pa.pre.split('.'), bi = pb.pre.split('.');
+  for (let i = 0; i < Math.max(ai.length, bi.length); i++) {
+    const x = ai[i], y = bi[i];
+    if (x === undefined) return -1;
+    if (y === undefined) return 1;
+    const xn = /^\d+$/.test(x), yn = /^\d+$/.test(y);
+    if (xn && yn) { if (Number(x) !== Number(y)) return Number(x) - Number(y); }
+    else if (x !== y) return x > y ? 1 : -1;
+  }
+  return 0;
+}
+
+// The category catalog — id -> display label + icon name. The icons themselves
+// render in the UI; this just supplies the label/icon id. Shared so the server's
+// facet/discover output and the app's client-side derivation agree on the set.
+const CATEGORIES$1 = {
+  payments:     { label: 'Payments',         icon: 'card' },
+  ai:           { label: 'AI & ML',          icon: 'sparkle' },
+  auth:         { label: 'Auth & Identity',  icon: 'key' },
+  devops:       { label: 'DevOps & Infra',   icon: 'server' },
+  comms:        { label: 'Communications',   icon: 'message' },
+  data:         { label: 'Data & Analytics', icon: 'chart' },
+  storage:      { label: 'Storage & CDN',    icon: 'box' },
+  productivity: { label: 'Productivity',     icon: 'layout' }
+};
+
+// The app historically referred to this map as CATEGORY_META — same data.
+const CATEGORY_META = CATEGORIES$1;
 
 var PUBLIC_FEATURED = [{
   ns: 'stripe',
@@ -1136,43 +1179,6 @@ function isGitRepoUrl(url) {
   }
 }
 
-// Compare two versions by semver precedence. Core (major.minor.patch) compares
-// numerically; a prerelease (e.g. 1.0.0-beta) ranks BELOW its release; prerelease
-// identifiers compare dot-wise. Returns >0 if a is newer. Mirrors cmpVersion in
-// the registry's build-index.mjs — keep the two in sync.
-function cmpVersion(a, b) {
-  var parse = v => {
-    var core = String(v == null ? '' : v).trim().replace(/^v/, '').split('+')[0];
-    var [main, pre] = core.split('-');
-    var nums = main.split('.').map(n => /^\d+$/.test(n) ? Number(n) : 0);
-    while (nums.length < 3) nums.push(0);
-    return {
-      nums,
-      pre: pre || null
-    };
-  };
-  var pa = parse(a),
-    pb = parse(b);
-  for (var i = 0; i < 3; i++) if (pa.nums[i] !== pb.nums[i]) return pa.nums[i] - pb.nums[i];
-  if (!pa.pre && !pb.pre) return 0;
-  if (!pa.pre) return 1; // release outranks prerelease
-  if (!pb.pre) return -1;
-  var ai = pa.pre.split('.'),
-    bi = pb.pre.split('.');
-  for (var _i = 0; _i < Math.max(ai.length, bi.length); _i++) {
-    var x = ai[_i],
-      y = bi[_i];
-    if (x === undefined) return -1;
-    if (y === undefined) return 1;
-    var xn = /^\d+$/.test(x),
-      yn = /^\d+$/.test(y);
-    if (xn && yn) {
-      if (Number(x) !== Number(y)) return Number(x) - Number(y);
-    } else if (x !== y) return x > y ? 1 : -1;
-  }
-  return 0;
-}
-
 // A collection's versions, newest-first.
 function sortedVersions(collection) {
   return [...(collection && collection.versions || [])].sort((a, b) => cmpVersion(b.version, a.version));
@@ -1256,46 +1262,6 @@ function registryEntryPath(entry) {
   return "collection/".concat(ns[0] || '_', "/").concat(ns, "/").concat(name, ".json");
 }
 
-// --- Presentation, derived client-side --------------------------------------
-// The index is a pure catalog ({ collections, totalCollections, publishers }).
-// featured / trending / categories are NOT baked into it — they're derived here
-// from the flags/category on each entry, so the data contract isn't coupled to
-// any one homepage and entries aren't duplicated.
-var CATEGORY_META = {
-  payments: {
-    label: 'Payments',
-    icon: 'card'
-  },
-  ai: {
-    label: 'AI & ML',
-    icon: 'sparkle'
-  },
-  auth: {
-    label: 'Auth & Identity',
-    icon: 'key'
-  },
-  devops: {
-    label: 'DevOps & Infra',
-    icon: 'server'
-  },
-  comms: {
-    label: 'Communications',
-    icon: 'message'
-  },
-  data: {
-    label: 'Data & Analytics',
-    icon: 'chart'
-  },
-  storage: {
-    label: 'Storage & CDN',
-    icon: 'box'
-  },
-  productivity: {
-    label: 'Productivity',
-    icon: 'layout'
-  }
-};
-
 // Shape the find page expects, derived from a fetched index. Accepts the pure
 // catalog ({ collections }) and, defensively, an older { all } index — returns
 // null for an empty/missing index so the host can fall back to its snapshot.
@@ -1334,6 +1300,29 @@ var REGISTRY_STATS_URL = import.meta.env && import.meta.env.VITE_REGISTRY_STATS_
 function fetchInstallCount(_x, _x2) {
   return _fetchInstallCount.apply(this, arguments);
 }
+
+// --- RegistrySource abstraction (Phase C) -----------------------------------
+// One interface, two backings, so the same host code works against either half
+// of the hybrid model:
+//
+//   StaticIndexSource — ONE index.json on any host (raw CDN, GitHub/GitLab/
+//     self-hosted). deriveHome + client-side search. Works offline/serverless;
+//     no counts, no real facets. This IS the deriveHome path, not thrown away.
+//
+//   ApiSource — the server's projection: /discover (real trending from measured
+//     installs), /search (FTS + facet counts at scale), /collection, /installs
+//     (read + advisory report). Honors the advisory contract — getDiscover()
+//     falls back to a passed-in static source when the server is unreachable, so
+//     browse/install survive a server outage.
+//
+// Both take an injected IO ({ getJson, postJson }) so the host decides transport:
+// the website uses browser fetch; the desktop app routes through the Electron
+// main process (renderer CSP blocks external fetch). Methods:
+//   getDiscover()                      -> { featured, trending, categories, totalCollections, publishers, monthlyInstalls? }
+//   search(query, filters)             -> { results, total, facets, page, perPage }
+//   getCollection(ns, name)            -> a single record (or null)
+//   getInstallCount(ns, name)          -> number | null
+//   reportInstall(ns, name, source)    -> void (advisory; never throws to caller)
 function _fetchInstallCount() {
   _fetchInstallCount = _asyncToGenerator(function* (ns, name) {
     if (!REGISTRY_STATS_URL || !ns || !name) return null;
@@ -1346,11 +1335,235 @@ function _fetchInstallCount() {
       if (typeof data.installs === 'number') return data.installs;
       if (typeof data.count === 'number') return data.count;
       return null;
-    } catch (_unused2) {
+    } catch (_unused5) {
       return null; // API down / unreachable — caller hides the stat
     }
   });
   return _fetchInstallCount.apply(this, arguments);
+}
+var browserIo = {
+  getJson: (url, headers) => fetch(url, {
+    cache: 'no-store',
+    headers
+  }).then(r => {
+    if (!r.ok) throw new Error("GET ".concat(url, " -> ").concat(r.status));
+    return r.json();
+  }),
+  postJson: (url, body) => fetch(url, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json'
+    },
+    body: JSON.stringify(body || {})
+  }).then(r => r.ok ? r.json() : null)
+};
+class StaticIndexSource {
+  constructor() {
+    var {
+      indexUrl,
+      statsUrl,
+      io
+    } = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : {};
+    this.indexUrl = indexUrl || REGISTRY_INDEX_URL;
+    this.statsUrl = statsUrl || REGISTRY_STATS_URL;
+    this.io = io || browserIo;
+    this._index = null;
+    // Which backing served the last call — always 'static' for this source. The
+    // host reads `source.lastMode` to show a "server vs offline index" badge.
+    this.lastMode = 'static';
+  }
+  _load() {
+    var _this = this;
+    return _asyncToGenerator(function* () {
+      if (!_this._index) _this._index = yield _this.io.getJson(_this.indexUrl);
+      return _this._index;
+    })();
+  }
+  getDiscover() {
+    var _this2 = this;
+    return _asyncToGenerator(function* () {
+      return deriveHome(yield _this2._load());
+    })();
+  }
+  // Client-side search over the cached index — substring match on title/ns/name/
+  // tagline, optional category filter, local facet counts.
+  search(query) {
+    var _arguments = arguments,
+      _this3 = this;
+    return _asyncToGenerator(function* () {
+      var filters = _arguments.length > 1 && _arguments[1] !== undefined ? _arguments[1] : {};
+      var index = yield _this3._load();
+      var all = index && (index.collections || index.all) || [];
+      var q = String(query || '').trim().toLowerCase();
+      var inCategory = c => !filters.category || c.category === filters.category;
+      var matches = c => !q || [c.title, c.ns, c.name, c.tagline].some(f => String(f || '').toLowerCase().includes(q));
+      var results = all.filter(c => inCategory(c) && matches(c)).sort((a, b) => a.title.localeCompare(b.title));
+      var facetSet = all.filter(matches);
+      var counts = {};
+      for (var c of facetSet) counts[c.category] = (counts[c.category] || 0) + 1;
+      var category = Object.entries(counts).map(_ref2 => {
+        var [id, count] = _ref2;
+        return {
+          id,
+          label: (CATEGORY_META[id] || {}).label || id,
+          count
+        };
+      }).sort((a, b) => b.count - a.count);
+      return {
+        results,
+        total: results.length,
+        page: 1,
+        perPage: results.length,
+        facets: {
+          category
+        }
+      };
+    })();
+  }
+  getCollection(ns, name) {
+    var _this4 = this;
+    return _asyncToGenerator(function* () {
+      var index = yield _this4._load();
+      var all = index && (index.collections || index.all) || [];
+      return all.find(c => c.ns === ns && c.name === name) || null;
+    })();
+  }
+  getInstallCount(ns, name) {
+    var _this5 = this;
+    return _asyncToGenerator(function* () {
+      if (!_this5.statsUrl) return null;
+      try {
+        var data = yield _this5.io.getJson("".concat(_this5.statsUrl.replace(/\/$/, ''), "/installs/").concat(ns, "/").concat(name));
+        return typeof data.installs === 'number' ? data.installs : typeof data.count === 'number' ? data.count : null;
+      } catch (_unused2) {
+        return null;
+      }
+    })();
+  }
+  reportInstall() {
+    return _asyncToGenerator(function* () {})();
+  } /* static index has no write path — advisory no-op */
+}
+class ApiSource {
+  // `fallback` is an optional StaticIndexSource used when the server is
+  // unreachable — the advisory contract: browse/install survive an outage.
+  constructor() {
+    var {
+      baseUrl,
+      io,
+      fallback
+    } = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : {};
+    this.base = String(baseUrl || '').replace(/\/$/, '');
+    this.io = io || browserIo;
+    this.fallback = fallback || null;
+    // Which backing served the last catalog call: 'api' (the live server),
+    // 'static' (fell back to the git-backed index), or 'error' (both failed).
+    // The host reads `source.lastMode` after a call to render a status badge —
+    // making the advisory fallback visible instead of silent.
+    this.lastMode = null;
+  }
+  // Run a server call; on failure transparently fall back to the static index
+  // and record which one actually answered.
+  _viaServer(serverCall, fallbackCall) {
+    var _this6 = this;
+    return _asyncToGenerator(function* () {
+      try {
+        var out = yield serverCall();
+        _this6.lastMode = 'api';
+        return out;
+      } catch (e) {
+        if (_this6.fallback) {
+          _this6.lastMode = 'static';
+          return fallbackCall();
+        }
+        _this6.lastMode = 'error';
+        throw e;
+      }
+    })();
+  }
+  getDiscover() {
+    var _this7 = this;
+    return _asyncToGenerator(function* () {
+      return _this7._viaServer(() => _this7.io.getJson("".concat(_this7.base, "/v1/discover")), () => _this7.fallback.getDiscover());
+    })();
+  }
+  search(query) {
+    var _arguments2 = arguments,
+      _this8 = this;
+    return _asyncToGenerator(function* () {
+      var filters = _arguments2.length > 1 && _arguments2[1] !== undefined ? _arguments2[1] : {};
+      var params = new URLSearchParams();
+      if (query) params.set('q', query);
+      if (filters.category) params.set('category', filters.category);
+      if (filters.sort) params.set('sort', filters.sort);
+      if (filters.page) params.set('page', String(filters.page));
+      return _this8._viaServer(() => _this8.io.getJson("".concat(_this8.base, "/v1/search?").concat(params.toString())), () => _this8.fallback.search(query, filters));
+    })();
+  }
+  getCollection(ns, name) {
+    var _this9 = this;
+    return _asyncToGenerator(function* () {
+      try {
+        var out = yield _this9.io.getJson("".concat(_this9.base, "/v1/collection/").concat(ns, "/").concat(name));
+        _this9.lastMode = 'api';
+        return out;
+      } catch (e) {
+        if (_this9.fallback) {
+          _this9.lastMode = 'static';
+          return _this9.fallback.getCollection(ns, name);
+        }
+        _this9.lastMode = 'error';
+        return null;
+      }
+    })();
+  }
+  getInstallCount(ns, name) {
+    var _this0 = this;
+    return _asyncToGenerator(function* () {
+      try {
+        var data = yield _this0.io.getJson("".concat(_this0.base, "/v1/installs/").concat(ns, "/").concat(name));
+        return typeof data.installs === 'number' ? data.installs : null;
+      } catch (_unused3) {
+        return null;
+      }
+    })();
+  }
+  reportInstall(ns, name, source) {
+    var _this1 = this;
+    return _asyncToGenerator(function* () {
+      // Advisory, fire-and-forget — failures must never surface to the user or
+      // block the install that already succeeded.
+      try {
+        yield _this1.io.postJson("".concat(_this1.base, "/v1/installs/").concat(ns, "/").concat(name), {
+          source
+        });
+      } catch (_unused4) {/* swallow — advisory */}
+    })();
+  }
+}
+
+// Build a source from a descriptor. `{ kind: 'api', baseUrl }` with an optional
+// static fallback, or `{ kind: 'static', indexUrl, statsUrl }`.
+function createRegistrySource() {
+  var descriptor = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : {};
+  var io = arguments.length > 1 ? arguments[1] : undefined;
+  if (descriptor.kind === 'api' && descriptor.baseUrl) {
+    var fallback = descriptor.indexUrl ? new StaticIndexSource({
+      indexUrl: descriptor.indexUrl,
+      statsUrl: descriptor.statsUrl,
+      io
+    }) : null;
+    return new ApiSource({
+      baseUrl: descriptor.baseUrl,
+      io,
+      fallback
+    });
+  }
+  return new StaticIndexSource({
+    indexUrl: descriptor.indexUrl,
+    statsUrl: descriptor.statsUrl,
+    io
+  });
 }
 
 // "Find and share API collections" page (the registry Discover screen).
@@ -1781,7 +1994,7 @@ function treeUrl(repo, ref, subdir) {
   var base = String(repo || '').replace(/\.git$/, '').replace(/\/+$/, '');
   if (!base) return null;
   if (!subdir) return base;
-  var r = ref;
+  var r = ref || 'HEAD';
   if (/github\.com/i.test(base)) return "".concat(base, "/tree/").concat(r, "/").concat(subdir);
   if (/gitlab\./i.test(base)) return "".concat(base, "/-/tree/").concat(r, "/").concat(subdir);
   if (/bitbucket\.org/i.test(base)) return "".concat(base, "/src/").concat(r, "/").concat(subdir);
@@ -3078,5 +3291,5 @@ function NavItem(_ref2) {
   }), " ", item.label);
 }
 
-export { Btn, CATEGORY_META, CollectionCard, CollectionDetailPage, CommunityPill, DEFAULT_REGISTRY, DownloadStat, Field, FindAndSharePage, Ic, Icons, Modal, ModalFooter, ModalHeader, OfficialPill, PUBLIC_CATEGORIES, PUBLIC_FEATURED, PUBLIC_TRENDING, Pill, PublishCollectionModal, REGISTRY_DATA, REGISTRY_INDEX_CONTENTS_API_URL, REGISTRY_INDEX_RAW_URL, REGISTRY_INDEX_URL, REGISTRY_STATS_URL, Row, Sidebar, Sparkline, VerifiedBadge, buildRegistryEntry, buildVersionEntry, cmpVersion, deriveHome, fetchInstallCount, fetchRegistryIndex, fmtN, getRegistryData, gitSourceOf, inputStyle, isGitRepoUrl, latestVersionEntry, latestVersionLabel, parseGithubRepo, registryEntryPath, sortedVersions };
+export { ApiSource, Btn, CATEGORY_META, CollectionCard, CollectionDetailPage, CommunityPill, DEFAULT_REGISTRY, DownloadStat, Field, FindAndSharePage, Ic, Icons, Modal, ModalFooter, ModalHeader, OfficialPill, PUBLIC_CATEGORIES, PUBLIC_FEATURED, PUBLIC_TRENDING, Pill, PublishCollectionModal, REGISTRY_DATA, REGISTRY_INDEX_CONTENTS_API_URL, REGISTRY_INDEX_RAW_URL, REGISTRY_INDEX_URL, REGISTRY_STATS_URL, Row, Sidebar, Sparkline, StaticIndexSource, VerifiedBadge, buildRegistryEntry, buildVersionEntry, cmpVersion, createRegistrySource, deriveHome, fetchInstallCount, fetchRegistryIndex, fmtN, getRegistryData, gitSourceOf, inputStyle, isGitRepoUrl, latestVersionEntry, latestVersionLabel, parseGithubRepo, registryEntryPath, sortedVersions };
 //# sourceMappingURL=index.js.map

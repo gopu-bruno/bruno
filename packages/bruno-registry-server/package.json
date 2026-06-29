@@ -1,0 +1,26 @@
+{
+  "name": "@usebruno/registry-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Read-optimized projection of the git-canonical OpenCollection registry, plus an advisory install-count event log. Postgres is a cache, not the system of record: the projection tables rebuild from git at any time; only the measured install events persist.",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "db:up": "docker compose up -d",
+    "db:down": "docker compose down",
+    "db:reset": "docker compose down -v && docker compose up -d",
+    "db:psql": "docker exec -it registry-pg psql -U registry -d registry",
+    "rebuild": "node scripts/rebuild.mjs",
+    "start": "node src/server.mjs",
+    "dev": "node --watch src/server.mjs",
+    "demo": "docker compose up -d && node scripts/rebuild.mjs && node src/server.mjs"
+  },
+  "dependencies": {
+    "@fastify/cors": "^10.0.1",
+    "@usebruno/registry-core": "file:../bruno-registry-core",
+    "fastify": "^5.1.0",
+    "pg": "^8.13.1"
+  }
+}

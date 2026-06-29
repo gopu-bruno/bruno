@@ -17,6 +17,7 @@
     "packages/bruno-graphql-docs",
     "packages/bruno-requests",
     "packages/bruno-filestore",
+    "packages/bruno-registry-core",
     "packages/bruno-registry-ui"
   ],
   "homepage": "https://usebruno.com",

@@ -98,6 +98,41 @@ const registerRegistryIpc = (mainWindow) => {
     return res.data;
   });
 
+  // Generic GET-JSON against the configured registry server, from MAIN (the
+  // renderer CSP blocks external connect-src; main has none). This is the
+  // transport ApiSource/StaticIndexSource use for /discover, /search,
+  // /collection, /installs. The URL is app-configured (a registry descriptor),
+  // not arbitrary user input, so no SSRF surface here.
+  ipcMain.handle('renderer:registry-fetch', async (event, { url } = {}) => {
+    if (!url) throw new Error('A url is required.');
+    const res = await axios.get(url, {
+      headers: { 'Cache-Control': 'no-cache' },
+      responseType: 'json',
+      timeout: 30000,
+      validateStatus: (status) => status >= 200 && status < 300
+    });
+    return res.data;
+  });
+
+  // Advisory install report — phone-home, coordinate-only, fire-and-forget. The
+  // renderer calls this AFTER a successful install; it must never throw back in a
+  // way that disrupts the install that already happened, so we resolve to a
+  // status object and swallow network errors.
+  ipcMain.handle('renderer:report-install', async (event, { baseUrl, ns, name, source } = {}) => {
+    if (!baseUrl || !ns || !name) return { reported: false };
+    try {
+      const url = `${String(baseUrl).replace(/\/$/, '')}/v1/installs/${encodeURIComponent(ns)}/${encodeURIComponent(name)}`;
+      const res = await axios.post(url, { source: source || null }, {
+        headers: { 'content-type': 'application/json' },
+        timeout: 15000,
+        validateStatus: (status) => status >= 200 && status < 300
+      });
+      return { reported: true, installs: res.data && res.data.installs };
+    } catch (e) {
+      return { reported: false };
+    }
+  });
+
   // Download a `url`-source version's opencollection artifact. Runs in MAIN to
   // dodge the renderer CSP/CORS, and (when a hash is given) verifies the bytes
   // against it — SRI-style "sha256-<base64>" — so a tampered/stale artifact is

@@ -49,4 +49,7 @@ export {
   deriveHome,
   REGISTRY_STATS_URL,
   fetchInstallCount,
+  StaticIndexSource,
+  ApiSource,
+  createRegistrySource,
 } from './registryData.js';

@@ -24,6 +24,9 @@
     "build": "rollup -c",
     "watch": "rollup -c -w"
   },
+  "dependencies": {
+    "@usebruno/registry-core": "0.1.0"
+  },
   "peerDependencies": {
     "react": ">=18",
     "react-dom": ">=18"
