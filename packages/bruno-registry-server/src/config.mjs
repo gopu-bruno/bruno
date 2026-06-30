@@ -15,5 +15,10 @@ export const config = {
   // fast dev loop (no clone); fall back to cloning the public repo.
   catalogDir: process.env.REGISTRY_CATALOG_DIR || '/Users/gopu_bruno/Documents/Projects/registry-hybrid',
   catalogGit: process.env.REGISTRY_CATALOG_GIT || 'https://github.com/gopu-bruno/registry-hybrid',
-  catalogBranch: process.env.REGISTRY_CATALOG_BRANCH || 'main'
+  catalogBranch: process.env.REGISTRY_CATALOG_BRANCH || 'main',
+
+  // Shared secret for the GitHub catalog webhook (HMAC-SHA256 of the raw body).
+  // Set the SAME value here and in the repo's webhook config. The default is for
+  // the local demo only — set WEBHOOK_SECRET in any real deployment.
+  webhookSecret: process.env.WEBHOOK_SECRET || 'dev-webhook-secret'
 };

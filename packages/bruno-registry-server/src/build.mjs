@@ -5,11 +5,12 @@
 // survive a rebuild. Run on every catalog change (merge webhook or poll).
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { validateEntry, toIndexRecord } from '@usebruno/registry-core';
+import { validateEntry } from '@usebruno/registry-core';
 import { getPool, initSchema } from './db.mjs';
+import { upsertCollection, refreshMeta } from './rows.mjs';
 
 // Walk collection/**/*.json under a catalog dir, returning { entry, relPath }.
-async function readCatalog(catalogDir) {
+export async function readCatalog(catalogDir) {
   const collectionsDir = join(catalogDir, 'collection');
   const out = [];
   async function walk(dir, rel) {
@@ -48,30 +49,11 @@ export async function build({ catalogDir }) {
   try {
     await client.query('BEGIN');
     // Projection only — counts (install_events / install_rollup) are left intact.
-    await client.query('TRUNCATE collections; DELETE FROM meta;');
-
-    for (const { entry } of found) {
-      const rec = toIndexRecord(entry);
-      await client.query(
-        `INSERT INTO collections
-           (coordinate, ns, name, title, tagline, category, featured, latest_version, repo, versions, entry, search)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,
-           setweight(to_tsvector('english', $4), 'A')
-           || setweight(to_tsvector('english', coalesce($5,'')), 'B')
-           || setweight(to_tsvector('simple', $2 || ' ' || $3), 'A'))`,
-        [
-          rec.coordinate, rec.ns, rec.name, rec.title, rec.tagline,
-          rec.category, rec.featured, rec.latestVersion, rec.repo,
-          JSON.stringify(rec.versions), JSON.stringify(entry)
-        ]
-      );
-    }
-
-    const publishers = new Set(found.map((f) => f.entry.ns)).size;
-    await client.query(
-      `INSERT INTO meta (key, value) VALUES ('totalCollections', $1), ('publishers', $2)`,
-      [String(found.length), String(publishers)]
-    );
+    // Full rebuild = truncate, then upsert every entry through the SAME row writer
+    // the incremental webhook path uses, so the two can't diverge.
+    await client.query('TRUNCATE collections;');
+    for (const { entry } of found) await upsertCollection(client, entry);
+    await refreshMeta(client);
     await client.query('COMMIT');
   } catch (e) {
     await client.query('ROLLBACK');
